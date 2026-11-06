@@ -6,6 +6,16 @@
 
 :root {
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Material 3's tertiary role, which the scan illustration uses to stand apart from the blues. */
+  --rr-accent: #8f4c00;
+  --rr-accent-container: #ffdcc0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rr-accent: #ffb77a;
+    --rr-accent-container: #6d3900;
+  }
 }
 
 html {
@@ -144,7 +154,9 @@ h3 {
   .MuiIconButton-root:active,
   .MuiToggleButton-root:active,
   .MuiChip-root:active,
-  .MuiBottomNavigationAction-root:active {
+  .MuiBottomNavigationAction-root:active,
+  .MuiListItemButton-root:active,
+  nav .MuiButtonBase-root:active {
     transform: none !important;
   }
 }
