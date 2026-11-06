@@ -1,4 +1,4 @@
-"""Sends the final result to a webhook. A failed delivery never affects the payment."""
+"""Sends the final result to a webhook. A failed delivery never affects the payment. A profile is never included."""
 
 from __future__ import annotations
 
@@ -10,16 +10,19 @@ import httpx
 log = logging.getLogger("rupeerail.agent")
 
 
-def build_payload(session_id: str, goal: str, status: str, offramp_id: str | None, tx_hash: str | None,
-                  amount_paise: int | None, payee: str | None) -> dict:
+def build_payload(run_id: str, agent_id: str, agent_name: str, wallet: str, prompt: str, status: str, offramp_id: str | None,
+                  tx_hash: str | None, amount_paise: int | None, payee: str | None) -> dict:
     return {
-        "session_id": session_id,
+        "run_id": run_id,
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "wallet": wallet,
         "status": status,
         "offramp_id": offramp_id,
         "txHash": tx_hash,
         "amount_inr": amount_paise / 100 if amount_paise is not None else None,
         "payee": payee,
-        "goal": goal,
+        "prompt": prompt,
         "finished_at": datetime.now(timezone.utc).isoformat(),
     }
 

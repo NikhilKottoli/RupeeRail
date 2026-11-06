@@ -21,8 +21,9 @@ from app.models import Action, Candidate
 from app.payment.flow import PaymentFlow
 from app.payment.results import LedgerResults, outcome
 from app.payment.verify import Constraints
-from app.session import AgentSession
+from app.run import AgentRun
 from app.settings import Settings
+from app.store import AgentStore
 
 from .test_payment import PAGE, QR_IMAGE, URL, WALLET, FakeBackend, FakeSigner, make_quote
 
@@ -111,7 +112,7 @@ class Extension:
 
 def run_machine(decider, extension, backend=None, results=None, session=None, signer=None, **options):
     backend = backend or Backend()
-    session = session or AgentSession("Order a cutting chai", 100, ["127.0.0.1"])
+    session = session or AgentRun("Order a cutting chai", 100, ["127.0.0.1"])
     events = []
 
     async def go():
@@ -139,7 +140,7 @@ def run_machine(decider, extension, backend=None, results=None, session=None, si
 def test_goal_to_paid_on_the_store():
     extension = Extension(page("Menu", [SEARCH, ADD]), page("Menu", [CART]), page("Your cart Total ₹1", [PROCEED]), PAYMENT_PAGE)
     result, backend, session, _, _ = run_machine(RuleDecider("Order a cutting chai"), extension)
-    assert result["status"] == "PAID" and result["amount_inr"] == 1 and result["payee"] == "vatsalgandhi239@okicici"
+    assert result["status"] == "PAID" and result["amount_inr"] == 1 and result["payee"] == "teststore@okicici"
     assert [a["target"] for a in extension.actions] == ["a2", "a3", "a4"]
     assert len(backend.submits) == 1 and backend.quotes[0][2] == "1.00"
     assert session.state == "await_result"
@@ -147,10 +148,10 @@ def test_goal_to_paid_on_the_store():
 
 def test_webhook_gets_the_real_outcome():
     sent = []
-    payload = build_payload("s", "g", "PAID", "0x1", "0x2", 150, "ab@ybl")
+    payload = build_payload("r", "a", "Chef", WALLET, "g", "PAID", "0x1", "0x2", 150, "ab@ybl")
     assert payload["amount_inr"] == 1.5
     assert send_webhook("http://x", payload, post=lambda url, json, timeout: (sent.append(json), httpx.Response(200))[1])
-    assert sent[0]["status"] == "PAID"
+    assert sent[0]["status"] == "PAID" and sent[0]["agent_name"] == "Chef" and sent[0]["wallet"] == WALLET
     assert send_webhook("", payload) is False
 
 
@@ -217,7 +218,7 @@ def test_ledger_is_opened_read_only(tmp_path, monkeypatch):
 def test_a_model_claiming_checkout_cant_cause_a_payment():
     decider = ScriptedDecider(Action(type="checkout_reached"))
     extension = Extension(page("Pay with UPI, no QR or total here"))
-    session = AgentSession("g", 100, ["127.0.0.1"])
+    session = AgentRun("g", 100, ["127.0.0.1"])
 
     async def stop_soon():
         await asyncio.sleep(0.05)
@@ -240,7 +241,7 @@ def test_a_model_claiming_checkout_cant_cause_a_payment():
 
 
 def test_no_action_type_can_reach_the_extension_as_a_payment():
-    assert set(Action.model_fields["type"].annotation.__args__) == {"click", "type", "scroll", "key", "wait", "done", "need_help", "checkout_reached"}
+    assert set(Action.model_fields["type"].annotation.__args__) == {"click", "type", "scroll", "key", "back", "wait", "done", "need_help", "checkout_reached"}
 
 
 @pytest.mark.parametrize("action,problem", [
@@ -301,14 +302,14 @@ def test_preflight_refuses_before_touching_the_page(over, text):
 
 
 def test_kill_switch_before_starting():
-    session = AgentSession("g", 100, ["127.0.0.1"])
+    session = AgentRun("g", 100, ["127.0.0.1"])
     session.stop()
     result, backend, *_ = run_machine(ScriptedDecider(Action(type="wait")), Extension(PAYMENT_PAGE), session=session)
     assert result["status"] == "STOPPED" and backend.quotes == []
 
 
 def test_kill_switch_during_browsing_stops_before_payment():
-    session = AgentSession("g", 100, ["127.0.0.1"])
+    session = AgentRun("g", 100, ["127.0.0.1"])
     extension = Extension(page("Menu", [SEARCH]), PAYMENT_PAGE, on_act=lambda _: session.stop())
     result, backend, *_ = run_machine(ScriptedDecider(Action(type="click", target="a1")), extension, session=session)
     assert result["status"] == "STOPPED" and backend.quotes == []
@@ -326,7 +327,7 @@ def stop_when_helped(session, events):
 
 
 def run_until_help(decider, extension):
-    session = AgentSession("g", 100, ["127.0.0.1"])
+    session = AgentRun("g", 100, ["127.0.0.1"])
     backend = Backend()
 
     async def go():
@@ -363,7 +364,7 @@ def test_model_errors_pause_instead_of_crashing():
 
 
 def test_resume_carries_on():
-    session = AgentSession("g", 100, ["127.0.0.1"])
+    session = AgentRun("g", 100, ["127.0.0.1"])
     backend = Backend()
     decider = ScriptedDecider(Action(type="need_help", reason="log in please"), Action(type="wait"))
 
@@ -419,7 +420,8 @@ PLACE = {"id": "a9", "role": "button", "text": "Place your order"}
 @pytest.mark.parametrize("label,blocked", [
     ("Place your order", True), ("Place Order", True), ("Buy Now", True), ("Pay Now", True), ("Pay ₹299", True),
     ("Confirm your order", True), ("Complete purchase", True), ("Proceed to payment", False), ("Add to Cart", False),
-    ("Proceed to Buy", False), ("Cash on Delivery", False),
+    ("Proceed to Buy", False), ("Cash on Delivery", False), ("Pay Rs 299", True), ("Pay 299", True), ("Pay with UPI", False),
+    ("Proceed to Pay", False), ("Order Now", False),
 ])
 def test_order_commit_labels(label, blocked):
     action = Action(type="click", target="x")
@@ -477,7 +479,7 @@ def test_blocked_order_click_tells_the_model_why_and_it_can_pick_upi():
 
 
 def test_after_a_person_continues_that_order_click_goes_through():
-    session = AgentSession("g", 100, ["127.0.0.1"])
+    session = AgentRun("g", 100, ["127.0.0.1"])
     backend = Backend()
     extension = Extension(page("Checkout", [PLACE]), page("Checkout 2", [PLACE]), page("Checkout 3", [PLACE]), PAYMENT_PAGE)
     decider = ScriptedDecider(Action(type="click", target="a9"))
@@ -519,7 +521,7 @@ def test_the_vision_decider_gets_a_screenshot_every_step():
     class Vision(ScriptedDecider):
         uses_vision = True
     decider = Vision(Action(type="done"))
-    run_machine(decider, Extension(page("Menu", [SEARCH], shot=SHOT)))
+    run_until_help(decider, Extension(page("Menu", [SEARCH], shot=SHOT)))
     assert decider.calls[0][1] is not None
 
 
@@ -557,7 +559,7 @@ def test_rule_decider_asks_when_two_items_match():
 
 
 def openai_with(handler):
-    return OpenAIDecider("sk-test", "test-model", httpx.Client(base_url="https://api.openai.com/v1", transport=httpx.MockTransport(handler)))
+    return OpenAIDecider("sk-test", "test-model", httpx.Client(base_url="https://api.openai.com/v1", transport=httpx.MockTransport(handler)), sleep=lambda _: None)
 
 
 def reply(content):
@@ -598,59 +600,103 @@ def test_openai_network_error():
 
 
 def test_decider_choice():
-    assert make_decider(Settings(), "g").name == "rule-based"
-    assert make_decider(Settings(openai_api_key="k"), "g").name.startswith("openai:")
-    assert make_decider(Settings(openai_api_key="k", decider="rule"), "g").name == "rule-based"
+    agent = {"instructions": "Order food", "profile": "Diet: vegan"}
+    assert make_decider(Settings(), agent, "g").name == "rule-based"
+    chosen = make_decider(Settings(openai_api_key="k"), agent, "g")
+    assert chosen.name.startswith("openai:") and "Order food" in chosen.system and "Diet: vegan" in chosen.system
+    assert make_decider(Settings(openai_api_key="k", decider="rule"), agent, "g").name == "rule-based"
 
 
 # ---- server ------------------------------------------------------------------------------------------
 
 
 EXT = {"origin": "chrome-extension://abc"}
+AGENT = {"name": "Chef", "description": "Orders food", "avatar": "chef", "colour": "saffron", "instructions": "Order food",
+         "profile": "", "sites": ["127.0.0.1"], "start_url": "http://127.0.0.1:5180/", "per_order_max_inr": 20, "budget_usdc": "2"}
 
 
-def server(**settings_over):
-    settings = Settings(global_max_inr=30, **settings_over)
+class FakeAdmin:
+    def __init__(self, backend, wallets=(WALLET,)):
+        self.backend, self.wallets, self.calls = backend, list(wallets), []
+
+    def list_wallets(self):
+        return list(self.wallets)
+
+    def create_wallet(self, key):
+        self.calls.append(("create", key))
+        self.wallets.append("0x" + f"{len(self.wallets) + 1:040x}")
+        return self.wallets[-1]
+
+    def fund(self, address):
+        self.calls.append(("fund", address))
+
+    def approve(self, address, token, spender, amount):
+        self.calls.append(("approve", address, spender, amount))
+        self.backend.allowance = str(amount)
+
+
+def server(admin=None, **settings_over):
+    settings = Settings(**{"global_max_inr": 30, **settings_over})
     backend = Backend()
-    app = create_app(settings, client=backend, signer=FakeSigner(), results=Results(),
-                     decider_factory=lambda goal: RuleDecider(goal),
+    admin = admin or FakeAdmin(backend)
+    app = create_app(settings, client=backend, signer_for=lambda wallet: FakeSigner(wallet), results=Results(),
+                     decider_factory=lambda agent, prompt: RuleDecider(prompt), store=AgentStore(":memory:"), admin=admin,
+                     background=lambda work: work(), wallet_options={"poll_sec": 0, "wait_sec": 0, "sleep": lambda _: None},
                      machine_options={"poll_sec": 0, "wait_sec": 0, "result_wait_sec": 0.2})
     return TestClient(app), backend
+
+
+def new_agent(client, **over):
+    response = client.post("/agents", json={**AGENT, **over}, headers=EXT)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def start_run(client, agent=None, prompt="Order a cutting chai", **over):
+    agent = agent or new_agent(client)
+    return client.post(f"/agents/{agent['id']}/runs", json={"prompt": prompt, **over}, headers=EXT)
+
+
+def run_id(client, **over):
+    response = start_run(client, **over)
+    assert response.status_code == 201, response.text
+    return response.json()["run_id"]
 
 
 @pytest.mark.parametrize("origin", ["https://evil.example", "http://127.0.0.1:5180", "null"])
 def test_websites_are_blocked(origin):
     client, _ = server()
-    assert client.post("/sessions", json={"goal": "g", "max_inr": 1}, headers={"origin": origin}).status_code == 403
-    assert client.get("/wallet", headers={"origin": origin}).status_code == 403
+    assert client.post("/agents", json=AGENT, headers={"origin": origin}).status_code == 403
+    assert client.get("/agents", headers={"origin": origin}).status_code == 403
 
 
 def test_a_website_cant_open_the_socket():
     client, _ = server()
-    sid = client.post("/sessions", json={"goal": "g", "max_inr": 1}, headers=EXT).json()["session_id"]
+    rid = run_id(client)
     with pytest.raises(Exception):
-        with client.websocket_connect(f"/sessions/{sid}", headers={"origin": "https://evil.example"}):
+        with client.websocket_connect(f"/runs/{rid}", headers={"origin": "https://evil.example"}):
             pass
 
 
 def test_a_specific_extension_id_can_be_required():
     client, _ = server(extension_id="good")
-    assert client.post("/sessions", json={"goal": "g", "max_inr": 1}, headers=EXT).status_code == 403
-    assert client.post("/sessions", json={"goal": "g", "max_inr": 1}, headers={"origin": "chrome-extension://good"}).status_code == 200
+    assert client.post("/agents", json=AGENT, headers=EXT).status_code == 403
+    assert client.post("/agents", json=AGENT, headers={"origin": "chrome-extension://good"}).status_code == 201
 
 
-def test_limits_can_only_be_narrowed():
+def test_a_prompt_can_lower_the_limit_but_not_raise_it():
     client, _ = server()
-    body = client.post("/sessions", json={"goal": "g", "max_inr": 5000, "allowed_domains": ["127.0.0.1", "evil.example"]}, headers=EXT).json()
-    assert body["max_inr"] == 30 and body["allowed_domains"] == ["127.0.0.1"]
-    assert client.post("/sessions", json={"goal": "g", "max_inr": 1, "allowed_domains": ["evil.example"]}, headers=EXT).status_code == 400
+    agent = new_agent(client)
+    assert start_run(client, agent, max_inr=5000).json()["max_inr"] == 20
+    client2, _ = server()
+    assert start_run(client2, max_inr=5).json()["max_inr"] == 5
 
 
-def test_full_session_over_the_socket():
+def test_full_run_over_the_socket():
     client, backend = server()
-    sid = client.post("/sessions", json={"goal": "Order a cutting chai", "max_inr": 1}, headers=EXT).json()["session_id"]
+    rid = run_id(client, max_inr=1)
     pages = [page("Menu", [SEARCH, ADD]), page("Menu", [CART]), page("Cart Total ₹1", [PROCEED]), PAYMENT_PAGE]
-    with client.websocket_connect(f"/sessions/{sid}", headers=EXT) as ws:
+    with client.websocket_connect(f"/runs/{rid}", headers=EXT) as ws:
         finished = None
         while not finished:
             message = json.loads(ws.receive_text())
@@ -661,15 +707,15 @@ def test_full_session_over_the_socket():
             elif message["type"] == "finished":
                 finished = message["result"]
     assert finished["status"] == "PAID" and len(backend.submits) == 1, finished
-    state = client.get(f"/sessions/{sid}").json()
+    state = client.get(f"/runs/{rid}").json()
     assert state["result"]["status"] == "PAID" and any(e["stage"] == "result" for e in state["events"])
     assert all("screenshot" not in e for e in state["events"])
 
 
-def test_stop_over_the_socket_and_one_socket_per_session():
+def test_stop_over_the_socket_and_one_socket_per_run():
     client, backend = server()
-    sid = client.post("/sessions", json={"goal": "g", "max_inr": 1}, headers=EXT).json()["session_id"]
-    with client.websocket_connect(f"/sessions/{sid}", headers=EXT) as ws:
+    rid = run_id(client)
+    with client.websocket_connect(f"/runs/{rid}", headers=EXT) as ws:
         while True:
             message = json.loads(ws.receive_text())
             if message["type"] == "observe":
@@ -680,14 +726,8 @@ def test_stop_over_the_socket_and_one_socket_per_session():
                 break
     assert backend.quotes == []
     with pytest.raises(Exception):
-        with client.websocket_connect(f"/sessions/{sid}", headers=EXT):
+        with client.websocket_connect(f"/runs/{rid}", headers=EXT):
             pass
-
-
-def test_wallet_endpoint():
-    client, _ = server()
-    body = client.get("/wallet", headers=EXT).json()
-    assert body["address"] == WALLET and body["uses_allowance"] is True
 
 
 def test_webhook_receiver():
@@ -696,17 +736,17 @@ def test_webhook_receiver():
     assert client.get("/webhooks/test").json() == [{"status": "PAID"}]
 
 
-def test_unknown_session_is_404():
+def test_unknown_run_is_404():
     client, _ = server()
-    assert client.get("/sessions/nope").status_code == 404
-    assert client.post("/sessions/nope/stop").status_code == 404
+    assert client.get("/runs/nope").status_code == 404
+    assert client.post("/runs/nope/stop").status_code == 404
 
 
 def test_events_arrive_before_finished_even_from_another_thread():
     client, _ = server()
-    sid = client.post("/sessions", json={"goal": "g", "max_inr": 1}, headers=EXT).json()["session_id"]
+    rid = run_id(client, max_inr=1)
     order = []
-    with client.websocket_connect(f"/sessions/{sid}", headers=EXT) as ws:
+    with client.websocket_connect(f"/runs/{rid}", headers=EXT) as ws:
         while True:
             message = json.loads(ws.receive_text())
             order.append(message.get("stage") or message["type"])

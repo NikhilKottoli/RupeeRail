@@ -48,10 +48,11 @@ class PaymentAborted(Exception):
 class PaymentFlow:
     def __init__(self, client: Any, signer: Signer, chain: str, constraints: Constraints,
                  emit: Callable[[str], None] = lambda _: None, should_stop: Callable[[], bool] = lambda: False,
+                 on_submit: Callable[[str], None] = lambda _: None,
                  clock: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep,
                  poll_sec: float = 3.0, poll_timeout_sec: float = 120.0) -> None:
         self.client, self.signer, self.chain, self.constraints = client, signer, chain, constraints
-        self.emit, self.should_stop, self.clock, self.sleep = emit, should_stop, clock, sleep
+        self.emit, self.should_stop, self.on_submit, self.clock, self.sleep = emit, should_stop, on_submit, clock, sleep
         self.poll_sec, self.poll_timeout_sec = poll_sec, poll_timeout_sec
         self.submitted = False  # one payment per session, even if a later step fails
         self.offramp_id: str | None = None  # known once submitted, even if the submit call itself fails
@@ -120,6 +121,7 @@ class PaymentFlow:
             step("submitting")
             self.submitted = True
             self.offramp_id = quote["id"]
+            self.on_submit(self.offramp_id)  # recorded first, so a crash can't lose track of the payment
             sent = self.client.submit(self.chain, quote["intent"], user_sig, permit_fields)
         except (QrError, VerificationError) as e:
             return PaymentResult("REFUSED", detail=str(e), stages=stages)

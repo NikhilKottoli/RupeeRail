@@ -1,8 +1,9 @@
-"""One running goal. Safe to emit events from the payment thread."""
+"""One agent working on one prompt. Safe to emit events from the payment thread."""
 
 from __future__ import annotations
 
 import asyncio
+import re
 import threading
 import time
 import uuid
@@ -10,12 +11,32 @@ from typing import Callable
 
 Send = Callable[[dict], None]
 MAX_EVENTS = 300
+MIN_TERM = 4
 
 
-class AgentSession:
-    def __init__(self, goal: str, max_paise: int, allowed_domains: list[str]) -> None:
+def profile_terms(profile: str) -> list[str]:
+    """The values in a profile, such as "Delivery address: 1 Test Road" -> "1 Test Road". Longest first, so a longer
+    value is hidden whole."""
+    terms = set()
+    for line in profile.splitlines():
+        whole = line.strip()
+        value = whole.partition(":")[2].strip() if ":" in whole else whole
+        for term in (whole, value, *re.split(r"[,;]", value)):
+            if len(term.strip()) >= MIN_TERM:
+                terms.add(term.strip())
+    return sorted(terms, key=len, reverse=True)
+
+
+class AgentRun:
+    def __init__(self, prompt: str, max_paise: int, allowed_domains: list[str], agent_id: str = "", agent_name: str = "", wallet: str = "",
+                 rehearse: bool = False, past_runs: list[str] | None = None, private_terms: list[str] | None = None) -> None:
         self.id = uuid.uuid4().hex
-        self.goal, self.max_paise, self.allowed_domains = goal, max_paise, allowed_domains
+        self.prompt, self.max_paise, self.allowed_domains = prompt, max_paise, allowed_domains
+        self.agent_id, self.agent_name, self.wallet = agent_id, agent_name, wallet
+        self.rehearse = rehearse
+        self.past_runs = past_runs or []
+        self.private_terms = private_terms or []
+        self.site = ""  # the last allowed host the agent was on
         self.state = "created"
         self.result: dict = {}
         self.events: list[dict] = []
@@ -30,9 +51,15 @@ class AgentSession:
     def detach(self) -> None:
         self._send = None
 
+    def redact(self, text: str) -> str:
+        """Hides profile details that a model repeats. The model gets the profile, but the run's record doesn't."""
+        for term in self.private_terms:
+            text = re.sub(re.escape(term), "[from profile]", text, flags=re.IGNORECASE)
+        return text
+
     def emit(self, stage: str, message: str, **extra: object) -> None:
         screenshot = extra.pop("screenshot", None)
-        event = {"type": "event", "stage": stage, "message": message, "at": time.time(), **extra}
+        event = {"type": "event", "stage": stage, "message": self.redact(message), "at": time.time(), **extra}
         self.events.append(event)
         del self.events[:-MAX_EVENTS]
         if self._send and self._loop:

@@ -43,7 +43,7 @@ class RuleDecider:
         cart_count = next((int(m.group(1)) for c in candidates if (m := CART_COUNT.search(_label(c)))), 0)
         if cart_count == 0:
             matches = [c for c in candidates if c.role == "button" and ADD.search(_label(c))]
-            wanted = [c for c in matches if all(w in _label(c).lower() for w in self.words)]
+            wanted = [c for c in matches if all(w in f"{_label(c)} {c.context}".lower() for w in self.words)]
             if len(wanted) == 1:
                 return act("click", wanted[0], reason="add the item from the goal")
             if len(wanted) > 1:
