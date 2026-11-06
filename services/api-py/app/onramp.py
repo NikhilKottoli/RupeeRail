@@ -37,6 +37,7 @@ log = logging.getLogger("rupeerail.onramp")
 RAZORPAY_MIN_TTL_SEC = 15 * 60 + 60  # Razorpay wants expire_by >= 15 min ahead; keep a minute of slack
 REFERENCE_LEN = 40  # Razorpay's reference_id limit; 40 hex chars of the 32-byte order id
 FORGET_PENDING_AFTER_SEC = 3600  # stop reconciling a nudged-but-unpaid link this long after it expires
+LINK_DESCRIPTION = "RupeeRail"  # "Payment for" on Razorpay's page; the header shows the account's business name
 
 
 def order_view(o: dict, cfg: ChainConfig | None, collect_upi_id: str, link: dict | None = None) -> dict:
@@ -149,7 +150,7 @@ class OnrampService:
         try:
             r = await self.razorpay.create_payment_link(
                 amount_paise=inr_paise, reference_id=reference_id, expire_by=expire_by,
-                description=f"Buy {format_units(amount, cfg.token.decimals)} {cfg.token.symbol} on {cfg.name}",
+                description=LINK_DESCRIPTION,
                 callback_url=f"{self.settings.public_base_url}/onramp/razorpay/callback",
                 notes={"orderId": order_id, "chain": cfg.key},
             )
