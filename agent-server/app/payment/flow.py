@@ -26,6 +26,7 @@ class Observation:
     url: str
     page_text: str
     screenshot: bytes | None = None
+    known_total: int | None = None  # the total from an earlier page, for QR pages that don't repeat it
 
 
 @dataclass
@@ -53,6 +54,7 @@ class PaymentFlow:
         self.emit, self.should_stop, self.clock, self.sleep = emit, should_stop, clock, sleep
         self.poll_sec, self.poll_timeout_sec = poll_sec, poll_timeout_sec
         self.submitted = False  # one payment per session, even if a later step fails
+        self.offramp_id: str | None = None  # known once submitted, even if the submit call itself fails
 
     def _checkpoint(self) -> None:
         if self.should_stop():
@@ -79,6 +81,8 @@ class PaymentFlow:
             step("reading the QR")
             payment = find_payment(observation.page_text, observation.screenshot)
             total = find_total(observation.page_text)
+            if total is None:
+                total = observation.known_total if observation.known_total is not None else payment.amount_paise
             step(f"page asks for {total} paise, QR pays {payment.upi_id}")
             problems = check_page(payment, total, observation.url, self.constraints)
             if problems:
@@ -115,6 +119,7 @@ class PaymentFlow:
 
             step("submitting")
             self.submitted = True
+            self.offramp_id = quote["id"]
             sent = self.client.submit(self.chain, quote["intent"], user_sig, permit_fields)
         except (QrError, VerificationError) as e:
             return PaymentResult("REFUSED", detail=str(e), stages=stages)
@@ -134,7 +139,11 @@ class PaymentFlow:
         deadline = self.clock() + self.poll_timeout_sec
         status = "SUBMITTED"
         while self.clock() < deadline:
-            status = self.client.status(id_, view_token)["status"]
+            try:
+                status = self.client.status(id_, view_token)["status"]
+            except Exception:  # the payment is already submitted, so a network blip must not lose track of it
+                self.sleep(self.poll_sec)
+                continue
             if status in FINAL_OK or status in FINAL_BAD:
                 return status
             self.sleep(self.poll_sec)

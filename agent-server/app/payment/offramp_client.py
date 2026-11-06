@@ -29,6 +29,9 @@ class OfframpClient:
     def config(self) -> dict:
         return self._check(self.http.get("/config"))
 
+    def health(self) -> dict:
+        return self._check(self.http.get("/health"))
+
     def account(self, chain: str, address: str) -> dict:
         return self._check(self.http.get(f"/account/{chain}/{address}"))
 

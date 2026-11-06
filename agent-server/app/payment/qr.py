@@ -13,11 +13,10 @@ UPI_LINK_RE = re.compile(r"upi://pay\?[^\s\"'<>]+", re.IGNORECASE)
 VPA_RE = re.compile(r"^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9]{2,64}$")
 AMOUNT_RE = re.compile(r"^(\d+)(?:\.(\d{1,2}))?$")
 # A total on the page: a label such as "Amount to pay", then a rupee amount within a short distance.
-TOTAL_RE = re.compile(
-    r"(?:amount\s+to\s+pay|amount\s+payable|to\s+pay|grand\s+total|order\s+total|total)\b[^\d₹]{0,24}"
-    r"(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)",
-    re.IGNORECASE,
-)
+AMOUNT = r"\b[^\d₹]{0,24}(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)"
+# The final amount's label beats a plain "Total", which on a real page may be for one line item.
+FINAL_TOTAL_RE = re.compile(rf"(?:amount\s+to\s+pay|amount\s+payable|to\s+pay|grand\s+total|order\s+total|payment\s+total){AMOUNT}", re.IGNORECASE)
+TOTAL_RE = re.compile(rf"total{AMOUNT}", re.IGNORECASE)
 
 
 class QrError(Exception):
@@ -118,5 +117,8 @@ def find_payment(page_text: str, screenshot: bytes | None) -> UpiPayment:
 
 def find_total(page_text: str) -> int | None:
     """The amount the page asks for, in paise. None if it shows no total, or conflicting ones."""
-    totals = {to_paise(m.group(1)) for m in TOTAL_RE.finditer(page_text or "")} - {None}
-    return totals.pop() if len(totals) == 1 else None
+    for pattern in (FINAL_TOTAL_RE, TOTAL_RE):
+        totals = {to_paise(m.group(1)) for m in pattern.finditer(page_text or "")} - {None}
+        if totals:
+            return totals.pop() if len(totals) == 1 else None
+    return None

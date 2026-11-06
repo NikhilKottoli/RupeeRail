@@ -115,7 +115,12 @@ def test_finds_the_total(text, paise):
     assert find_total(text) == paise
 
 
-@pytest.mark.parametrize("text", ["No price here", "Masala chai · ₹20", "Total ₹20\nAmount to pay ₹25", ""])
+def test_the_final_amount_beats_a_line_item_total():
+    assert find_total("Total ₹20\nAmount to pay ₹25") == 2500
+    assert find_total("Items: ₹299\nTotal: ₹299\nOrder Total: ₹339") == 33900
+
+
+@pytest.mark.parametrize("text", ["No price here", "Masala chai · ₹20", "Total ₹20\nTotal ₹25", "Order total ₹20\nOrder total ₹25", ""])
 def test_no_clear_total_means_none(text):
     assert find_total(text) is None
 
@@ -219,6 +224,7 @@ def test_a_bad_quote_is_never_signed(quote, text):
 
 @pytest.mark.parametrize("observation,text", [
     (Observation(URL, "Pay with UPI", QR_IMAGE), "one clear total"),
+    (Observation(URL, "Pay with UPI", QR_IMAGE, known_total=200), "over the 100 paise limit"),
     (Observation(URL, "Amount to pay ₹2", QR_IMAGE), "over the 100 paise limit"),
     (Observation("https://evil.example/", PAGE, QR_IMAGE), "not in the allowed domains"),
     (Observation(URL, PAGE, None), "no UPI QR"),
@@ -227,6 +233,19 @@ def test_a_bad_page_never_reaches_a_quote(observation, text):
     result, backend, signer, _ = run(observation=observation)
     refused(result, backend, signer, text)
     assert backend.quotes == []
+
+
+def test_a_qr_page_can_use_the_total_from_the_review_page():
+    result, backend, _, _ = run(observation=Observation(URL, "Scan with any UPI app", QR_IMAGE, known_total=100))
+    assert result.status == "COMPLETED" and backend.quotes[0][2] == "1.00"
+
+
+def test_a_qr_amount_can_stand_in_for_a_missing_total_within_the_limit():
+    ok = "upi://pay?pa=vatsalgandhi239@okicici&am=1.00"
+    result, backend, _, _ = run(observation=Observation(URL, ok, None))
+    assert result.status == "COMPLETED" and backend.quotes[0][2] == "1.00"
+    high = "upi://pay?pa=vatsalgandhi239@okicici&am=2.00"
+    assert run(observation=Observation(URL, high, None))[0].status == "REFUSED"
 
 
 def test_a_qr_amount_must_equal_the_page_total():

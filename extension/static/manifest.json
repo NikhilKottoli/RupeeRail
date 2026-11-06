@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "RupeeRail Agent",
+  "version": "0.1.0",
+  "description": "Tell an agent what to buy. It shops in this tab and pays a UPI QR from its wallet, within limits.",
+  "permissions": ["sidePanel", "tabs", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "side_panel": { "default_path": "panel.html" },
+  "action": { "default_title": "RupeeRail Agent" }
+}

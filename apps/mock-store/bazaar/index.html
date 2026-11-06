@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bazaar</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, sans-serif; color: #111; background: #eaeded; }
+  header { background: #131921; color: #fff; padding: 12px 18px; display: flex; gap: 12px; align-items: center; }
+  header h1 { margin: 0; font-size: 20px; }
+  header form { flex: 1; display: flex; gap: 6px; }
+  header input { flex: 1; padding: 8px; border: 0; border-radius: 4px; }
+  main { max-width: 760px; margin: 18px auto; padding: 0 14px; }
+  .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+  .btn { display: inline-block; padding: 8px 16px; border: 0; border-radius: 18px; background: #ffd814; color: #111; font: inherit; cursor: pointer; text-decoration: none; }
+  .choice { display: block; padding: 10px; margin: 6px 0; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; }
+  .choice input { opacity: 0; position: absolute; width: 0; height: 0; }
+  .choice:has(input:checked) { border-color: #e77600; background: #fcf5ee; }
+  .qr { display: block; width: 320px; margin: 10px auto; }
+  iframe { width: 100%; height: 600px; border: 0; }
+</style>
+</head>
+<body>
+<header><h1><a href="?" style="color:#fff;text-decoration:none">Bazaar</a></h1>
+  <form onsubmit="event.preventDefault();location.search='?q='+encodeURIComponent(this.q.value)">
+    <input name="q" placeholder="Search Bazaar" aria-label="Search Bazaar"><button class="btn">Search</button>
+  </form>
+  <a class="btn" href="?page=cart" id="cart-link">Cart</a>
+</header>
+<main id="main"></main>
+<script>
+  // A test store with the awkward parts of a real marketplace: products open in a new tab, payment radios are
+  // hidden behind styling, cash on delivery is preselected, and the QR sits in an iframe with no total beside it.
+  const ITEMS = { pen: { name: "Blue gel pen", paise: 100 }, tea: { name: "Masala tea, 250 g", paise: 2000 } };
+  const params = new URLSearchParams(location.search);
+  const load = (k, d) => JSON.parse(localStorage.getItem(k) ?? JSON.stringify(d));
+  const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+  const rupees = (p) => "₹" + (p / 100);
+  const cart = load("cart", []);
+  const total = () => cart.reduce((s, id) => s + ITEMS[id].paise, 0);
+  const main = document.getElementById("main");
+  document.getElementById("cart-link").textContent = `Cart (${cart.length})`;
+  const go = (page) => { location.href = `?page=${page}`; };
+  const pages = {
+    home() {
+      const q = (params.get("q") ?? "").toLowerCase();
+      if (!q) return `<div class="card"><h2>Welcome to Bazaar</h2><p>Search for anything.</p></div>`;
+      return Object.entries(ITEMS).filter(([, i]) => i.name.toLowerCase().includes(q.split(" ")[0]) || q.includes(i.name.split(" ").pop().toLowerCase()))
+        .map(([id, i]) => `<div class="card"><a href="?page=product&id=${id}" target="_blank">${i.name}</a><br>${rupees(i.paise)}</div>`).join("") || `<div class="card">No results.</div>`;
+    },
+    product() {
+      const id = params.get("id"), i = ITEMS[id];
+      return `<div class="card"><h2>${i.name}</h2><p>${rupees(i.paise)}</p>
+        <button class="btn" onclick="cart.push('${id}');save('cart',cart);go('cart')">Add to Cart</button>
+        <button class="btn" onclick="cart.push('${id}');save('cart',cart);go('review')">Buy Now</button></div>`;
+    },
+    cart() {
+      return `<div class="card"><h2>Shopping Cart</h2>${cart.map((id) => `<p>${ITEMS[id].name} ${rupees(ITEMS[id].paise)}</p>`).join("")}
+        <p>Subtotal ${rupees(total())}</p><button class="btn" onclick="go('address')">Proceed to Buy</button></div>`;
+    },
+    address() {
+      return `<div class="card"><h2>Select a delivery address</h2>
+        <label class="choice"><input type="radio" name="a" checked> Test User, 1 Test Road, Mumbai</label>
+        <button class="btn" onclick="go('payment')">Deliver to this address</button></div>`;
+    },
+    payment() {
+      return `<div class="card"><h2>Select a payment method</h2>
+        <label class="choice"><input type="radio" name="m" value="card"> Saved card ending in 4242</label>
+        <label class="choice"><input type="radio" name="m" value="cod" checked> Cash on Delivery</label>
+        <label class="choice"><input type="radio" name="m" value="upi"> Other UPI Apps, scan a QR code</label>
+        <button class="btn" onclick="save('method',document.querySelector('input[name=m]:checked').value);go('review')">Use this payment method</button></div>`;
+    },
+    review() {
+      const method = load("method", "cod");
+      const names = { card: "Card ending in 4242", cod: "Cash on Delivery", upi: "UPI" };
+      return `<div class="card"><h2>Review your order</h2><p>Paying with ${names[method]} <a href="?page=payment">Change</a></p>
+        <p>Order Total: ${rupees(total())}</p>
+        <button class="btn" onclick="go('${method === "upi" ? "pay" : "placed"}')">Place your order</button></div>`;
+    },
+    placed() {
+      save("spent_without_upi", true);
+      return `<div class="card"><h2>Order placed</h2><p>Paid with ${load("method", "cod")}, outside UPI.</p></div>`;
+    },
+    pay() {
+      return `<div class="card"><h2>Complete your payment</h2><iframe title="Payment" src="?page=qr"></iframe></div>`;
+    },
+    qr() {
+      document.querySelector("header").remove();
+      return `<h3>Scan with any UPI app</h3><p>Pay using UPI within 5 minutes.</p><img class="qr" alt="UPI payment QR code" src="../upi.png">`;
+    },
+  };
+  main.innerHTML = (pages[params.get("page")] ?? pages.home)();
+</script>
+</body>
+</html>
