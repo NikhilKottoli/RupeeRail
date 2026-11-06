@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "feature": "PWA: swap EURC → USDC on Arc when the USDC balance is too low",
+  "branch": "feat/token-swap",
+  "arcStudio": {
+    "session": "scanpay-vault",
+    "appId": "27d96855-8adb-4904-ac5a-ff15aab2f8cc",
+    "webUrl": "https://studio.arc.io/app/27d96855-8adb-4904-ac5a-ff15aab2f8cc",
+    "sandboxRoot": "rupeerail-web/",
+    "localRoot": "apps/web/",
+    "pathMap": "rupeerail-web/<path> in the sandbox = apps/web/<path> here. Pulled into a staging dir and copied, so pull-manifest.json (keyed by local path) has no entries for these files.",
+    "spec": "docs/pwa-swap-spec.md (local only; docs/ is in .git/info/exclude)"
+  },
+  "turns": [
+    {
+      "date": "2026-11-06",
+      "status": "completed",
+      "task": "Build the swap card per the spec; tsc, vitest and vite build in the sandbox; make the Studio preview serve the PWA.",
+      "sandboxResult": "tsc ok · vitest 81/81 · vite build ok (precache 760.91 KiB)",
+      "filesChanged": [
+        "package.json", "vite.config.ts", "src/components/PayScreen.tsx", "src/components/SwapCard.tsx",
+        "src/components/PayScreen.swap.test.tsx", "src/lib/swap.ts", "src/lib/swap.test.ts"
+      ],
+      "localCommit": "75d4089"
+    },
+    {
+      "date": "2026-11-06",
+      "status": "budget_exceeded",
+      "task": "Gas edge case in sizeSwap + run Playwright. Arc Studio hit its per-user daily limit and changed nothing.",
+      "filesChanged": []
+    }
+  ],
+  "pulledFiles": {
+    "_note": "sha256 of each file exactly as Arc Studio produced it (= commit 75d4089), same hash format as pull-manifest.json",
+    "apps/web/package.json": "e0ca5fe6a4e219ae34f67d5b98975d61b32b30e308e6963f88c05dc072951a8d",
+    "apps/web/vite.config.ts": "ce8cdb21d3e75358e44c04314afee4fdeeaefebfbb5cc80f6c50a70a84685c10",
+    "apps/web/src/components/PayScreen.tsx": "368304148fe2c0e9ccd0979e2f90a8c57e1d17844eaba6b342563818ec0a47ce",
+    "apps/web/src/components/SwapCard.tsx": "8c6caacdfdebde4a6d94366f19786a96a44b2339634e71432f149f0a5a4a6032",
+    "apps/web/src/components/PayScreen.swap.test.tsx": "00534ab91bf694c9a512ff1bf66ccc8b649358e0d076d438ccb2569ea732ef7b",
+    "apps/web/src/lib/swap.ts": "7dec7b0565270588e361496f5531e8797925b32600e03276bcc81d316b551687",
+    "apps/web/src/lib/swap.test.ts": "4ccd65d899c12731c0aa0be554b6d15be0d243a93b9757ca08af9c7ea40f5d90"
+  },
+  "localEdits": {
+    "_note": "Changed here by Claude Code after the pull (2026-11-07). The Arc Studio sandbox still has the pulled versions: round-trip apps/web/src/ and apps/web/e2e/ to rupeerail-web/ on the next turn to sync it.",
+    "apps/web/src/lib/swap.ts": "sizeSwap accepts only minOut >= shortfall + gas fee (USDC gas from the estimate, else GAS_RESERVE 0.05); target raised to cover it; new gasFeeUnits, requiredOut, GAS_RESERVE",
+    "apps/web/src/components/SwapCard.tsx": "passes gasFee: gasFeeUnits(estimate) to sizeSwap",
+    "apps/web/src/lib/swap.test.ts": "cap test now needs shortfall + gas; new tests for the gas rule, the reserve fallback, a large-gas target and gasFeeUnits",
+    "apps/web/e2e/app.spec.ts": "'too little balance' split into Arc (swap card, EURC read via a mocked RPC), Arc with no EURC, and Whitechain (old warning)"
+  },
+  "verified": {
+    "date": "2026-11-07",
+    "local": "tsc ok · vitest 86/86 · vite build ok (precache 761.17 KiB) · Playwright 29 passed, 1 skipped (live.spec, needs E2E live env)",
+    "liveSmoke": "2026-11-06 on Arc testnet with scripts/swap-smoke: 0.402259 EURC → 0.488464 USDC for a ₹100 quote, Pay enabled; lock was gasless; refund came from the deployed backend (quote issued by a local backend)"
+  }
+}
