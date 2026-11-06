@@ -1,0 +1,187 @@
+import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import InstallMobileOutlined from "@mui/icons-material/InstallMobileOutlined";
+import QrCodeScanner from "@mui/icons-material/QrCodeScanner";
+import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import Alert from "@mui/material/Alert";
+import AppBar from "@mui/material/AppBar";
+import BottomNavigation from "@mui/material/BottomNavigation";
+import BottomNavigationAction from "@mui/material/BottomNavigationAction";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
+import Container from "@mui/material/Container";
+import IconButton from "@mui/material/IconButton";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Paper from "@mui/material/Paper";
+import Toolbar from "@mui/material/Toolbar";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+import { useCallback, useEffect, useRef, useState } from "react";
+import ConnectScreen from "./components/ConnectScreen";
+import HistoryScreen from "./components/HistoryScreen";
+import PayScreen from "./components/PayScreen";
+import { api, type AppConfig } from "./lib/api";
+import { shortAddress } from "./lib/format";
+import {
+  connectWallet, discoverWallets, existingAccount, walletErrorMessage, type Eip1193Provider, type WalletOption,
+} from "./lib/wallet";
+
+const WALLET_KEY = "rupeerail.wallet";
+
+interface InstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+}
+
+export default function App() {
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [wallets, setWallets] = useState<WalletOption[] | null>(null);
+  const [provider, setProvider] = useState<Eip1193Provider | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"pay" | "history">("pay");
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const restored = useRef(false);
+
+  const loadConfig = useCallback(() => {
+    setConfigError(null);
+    api.config().then(setConfig).catch((e: Error) => setConfigError(e.message));
+  }, []);
+  useEffect(loadConfig, [loadConfig]);
+  useEffect(() => discoverWallets(setWallets), []);
+
+  useEffect(() => {
+    const onPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const onInstalled = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  // Reconnect silently to the wallet used last time, without a prompt.
+  useEffect(() => {
+    if (restored.current || !wallets?.length) return;
+    const saved = localStorage.getItem(WALLET_KEY);
+    const wallet = wallets.find((w) => w.id === saved);
+    if (!wallet) return;
+    restored.current = true;
+    void existingAccount(wallet.provider).then((account) => {
+      if (account) {
+        setProvider(wallet.provider);
+        setAddress(account);
+      }
+    });
+  }, [wallets]);
+
+  const disconnect = useCallback(() => {
+    localStorage.removeItem(WALLET_KEY);
+    setProvider(null);
+    setAddress(null);
+    setTab("pay");
+  }, []);
+
+  useEffect(() => {
+    if (!provider?.on) return;
+    const onAccounts = (accounts: string[]) => {
+      if (accounts[0]) setAddress(accounts[0]);
+      else disconnect();
+    };
+    provider.on("accountsChanged", onAccounts);
+    return () => provider.removeListener?.("accountsChanged", onAccounts);
+  }, [provider, disconnect]);
+
+  const connect = async (wallet: WalletOption) => {
+    setConnecting(true);
+    setWalletError(null);
+    try {
+      const account = await connectWallet(wallet.provider);
+      localStorage.setItem(WALLET_KEY, wallet.id);
+      setProvider(wallet.provider);
+      setAddress(account);
+    } catch (e) {
+      setWalletError(walletErrorMessage(e));
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const install = async () => {
+    await installPrompt?.prompt();
+    setInstallPrompt(null);
+  };
+
+  return (
+    <Box sx={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
+      <AppBar position="sticky" elevation={0} color="transparent" sx={{ bgcolor: "background.default", pt: "env(safe-area-inset-top)" }}>
+        <Toolbar sx={{ gap: 1 }}>
+          <Typography variant="h6" component="h1" sx={{ flexGrow: 1 }}>RupeeRail</Typography>
+          {installPrompt && (
+            <Tooltip title="Install app">
+              <IconButton onClick={install} aria-label="Install app"><InstallMobileOutlined /></IconButton>
+            </Tooltip>
+          )}
+          {address && (
+            <Chip
+              icon={<AccountBalanceWalletOutlined />}
+              label={shortAddress(address)}
+              variant="outlined"
+              onClick={(e) => setMenuAnchor(e.currentTarget)}
+              aria-label="Wallet menu"
+            />
+          )}
+        </Toolbar>
+      </AppBar>
+      <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
+        <MenuItem
+          onClick={() => {
+            setMenuAnchor(null);
+            disconnect();
+          }}
+        >
+          Disconnect
+        </MenuItem>
+      </Menu>
+
+      <Container maxWidth="sm" component="main" sx={{ flexGrow: 1, pt: 1, pb: address ? 12 : 4 }}>
+        {configError ? (
+          <Alert severity="error" action={<Button color="inherit" size="small" onClick={loadConfig}>Retry</Button>}>
+            {configError}
+          </Alert>
+        ) : !config || wallets === null ? (
+          <Box sx={{ display: "grid", placeItems: "center", py: 10 }}>
+            <CircularProgress aria-label="Loading" />
+          </Box>
+        ) : !address || !provider ? (
+          <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
+        ) : tab === "pay" ? (
+          <PayScreen key={address} config={config} provider={provider} address={address} />
+        ) : (
+          <HistoryScreen key={address} config={config} provider={provider} address={address} />
+        )}
+      </Container>
+
+      {address && (
+        <Paper
+          square
+          elevation={0}
+          sx={{ position: "fixed", bottom: 0, left: 0, right: 0, borderTop: 1, borderColor: "divider", pb: "env(safe-area-inset-bottom)", zIndex: "appBar" }}
+        >
+          <BottomNavigation showLabels value={tab} onChange={(_, value) => setTab(value)}>
+            <BottomNavigationAction label="Pay" value="pay" icon={<QrCodeScanner />} />
+            <BottomNavigationAction label="History" value="history" icon={<ReceiptLongOutlined />} />
+          </BottomNavigation>
+        </Paper>
+      )}
+    </Box>
+  );
+}
