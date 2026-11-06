@@ -38,6 +38,12 @@ rsync -az --rsync-path="sudo rsync" --chown=root:root deploy/Caddyfile <host>:/e
 ssh <host> 'sudo systemctl reload caddy'
 ```
 
+## Buying tokens (the Buy tab)
+
+The user enters an INR amount, reviews the rate and pays on Razorpay's hosted page. That page is a full-page visit, not a popup, so the CSP stays `'self'`-only. Razorpay sends the browser to the API's callback, which redirects to `/?onramp=<orderId>&payment=received`. The app reads those parameters once, removes them from the address bar and polls `GET /onramp/{id}` until the tokens are sent. It's a query on `/` because `/onramp/...` belongs to the API. The last 10 purchases are kept in `localStorage` for the "Recent purchases" list.
+
+"Payment received" only means Razorpay's redirect checked out. Tokens are sent after the server confirms the payment with Razorpay itself.
+
 ## What "Payment processed" means
 
 `COMPLETED` means the operator reported the INR payout, which the chain can't verify. The app says "processed" rather than claiming the merchant has the money, and offers a dispute for 24 hours.
