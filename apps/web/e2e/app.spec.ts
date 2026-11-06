@@ -315,6 +315,14 @@ test("too little USDC on Arc offers a swap from EURC and keeps Pay blocked", asy
   await expect(page.getByText("doesn't have enough USDC")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Pay · rate held/ })).toBeDisabled();
   expect(rpcCalls).toContain("eth_call");
+  await shot(page, "swap-1-card");
+  if (!CAPTURE) return;
+  // Screenshot mode only: open the confirm dialog with a LIVE Circle Swap Kit estimate (read-only, nothing is sent).
+  await page.getByRole("button", { name: "Swap EURC → USDC" }).click();
+  const dialog = page.getByRole("dialog", { name: "Confirm the swap" });
+  await expect(dialog).toBeVisible({ timeout: 60_000 });
+  await expect(dialog.getByText(/→ at least/)).toBeVisible();
+  await shot(page, "swap-2-confirm");
 });
 
 test("too little USDC on Arc with no EURC disables the swap", async ({ page }) => {
