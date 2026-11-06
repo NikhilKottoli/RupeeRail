@@ -19,14 +19,14 @@ Python projects use `uv` and Python 3.12. There's no CI and no configured Python
 | `services/api-py` | `uv run uvicorn app.main:app --port 8788` | `uv run pytest -m "not live"` | `uv run pytest tests/test_workers.py::test_failure_refunds_reason_3` |
 | `apps/upi-payer` | `uv run python main.py run` | `uv run pytest` | `uv run pytest tests/test_agent.py::test_dry_run_uses_no_phone` |
 | `agent-server` | `uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8790` | `uv run pytest` | `uv run pytest tests/test_agent.py::test_goal_to_paid_on_the_store` |
-| `extension` | `npm run build`, then load `dist` unpacked in Chrome | `npx playwright test` | `npx playwright test -g "typed goal"` |
+| `extension` | `npm run build`, then load `dist` unpacked in Chrome | `npx playwright test` | `npx playwright test -g "typing a prompt"` |
 | `apps/web` | `npm run dev` | `npm test`, `npx playwright test` | `npx vitest run -t "splitSignature"`, `npx playwright test -g "dark mode"` |
-| `apps/mock-store` | `python3 -m http.server 5180 --bind 127.0.0.1 --directory apps/mock-store` | Through `agent-server` | |
+| `apps/mock-store` (local only, not in git) | `python3 -m http.server 5180 --bind 127.0.0.1 --directory apps/mock-store` | Through `extension`, whose browser tests skip without it | |
 | `contracts` | | `forge test` | `forge test --match-test test_Complete_OnlySettler` |
 
 - **`services/api-py`:** `uv run pytest -m live` makes read-only calls to both testnets. `--dry-run` simulates transactions without broadcasting.
 - **`apps/upi-payer`:** dry run unless `UPI_LITE_LIVE=1`. `main.py check` and `main.py rehearse --upi-id <id> --inr 1` can't tap Pay, so use them to calibrate a phone. `main.py check` needs its `.env`.
-- **`agent-server`:** a goal run through the extension pays for real, and so does `app.demo_store`, which requires `--yes`. `uv run python -m tests.e2e_stack` starts the fake off-ramp the extension's tests use.
+- **`agent-server`:** a run through the extension pays for real unless it's a rehearsal, and so does `app.demo_store`, which requires `--yes`. `uv run python -m tests.e2e_stack` starts the fake off-ramp the extension's tests use. Tests must never use a real `WalletAdmin`, because Circle allows only 5 agent wallets per chain.
 - **`apps/web`:** `npm run build` also type-checks. Browser tests use installed Chrome at phone size. `e2e/live.spec.ts` sends real testnet transactions and runs only when its environment variables are set.
 - **`contracts`:** run `git submodule update --init --recursive` first. `ARC_RPC_URL` and `WHITECHAIN_RPC_URL` enable the fork tests in `test/fork/`.
 
@@ -61,6 +61,12 @@ There's no shared package between these projects, so a change on one side needs 
 - **Quotes last 90 seconds.** Request them last, after every other check has passed.
 - **`apps/upi-payer` return values:** `failed` must mean money can't have moved. Anything unclear after the Pay tap is `unknown`. It only taps Pay after reading the right amount, payee and "UPI Lite" on screen, and only starts from Google Pay's home screen.
 - **`agent-server` is a plain state machine** (`app/machine.py`). Deciders only choose page actions. Code decides when the checkout is reached, by finding one UPI QR and one total on an allowed site, and `verify.py` checks the quote. A model can't cause a payment.
+- **Agents last, and models can't change them.** They're kept in `agent-server/data/agents.sqlite`, and only the panel's requests write to them. Models never write memory, because a hostile page could then plant a lasting instruction. A run gets only code-written facts about past runs.
+- **Each agent has its own Circle wallet, and its budget is that wallet's allowance to the vault.** `WalletAdmin` and `WalletManager` change budgets, so `machine.py` and `payment/` must never import them. A run can only sign.
+- **Order-placing clicks** go ahead on their own only when code can see UPI selected and the total within the limit. They could otherwise spend through a saved card or cash on delivery, outside every limit here.
+- **Clicks are real input through `chrome.debugger`,** because sites such as Swiggy ignore scripted clicks. It's attached only to the run's tab, after the site check, and only during a run.
+- **`openai_base` can point at any service with OpenAI's API.** Agents' instructions, profiles and page text go there on every step, so choose it with that in mind.
+- **A profile stays out of events, logs and webhooks.** `AgentRun.redact` hides values a model repeats, and `callbacks.py` never receives a profile.
 - **The agent reports the payer's result, not `COMPLETED`.** `app/payment/results.py` reads the payer's ledger, read-only.
 - **The agent server checks `Origin`.** Only the extension may use it from a browser, or any website could drive a server that can spend money.
 - **Web wallets:** plain EIP-1193 and EIP-6963, with no web3 library, because the backend builds every typed-data payload. An installed PWA has no injected wallet, so phones open the app in MetaMask's browser.
@@ -78,9 +84,9 @@ One Azure host serves the web app and the API through Caddy. It runs copies of t
 
 | File | Covers |
 |---|---|
-| `README-agents.md` | The agentic checkout plan |
+| `README-agents.md` | The long-lived agents plan |
 | `docs/backend-notes.md`, `docs/verify-log.md` | Backend findings and tested answers for the plan |
 | `arkiv/schema.md` | Arkiv payout board design |
-| `README-backend.md`, `backend-handoff.md` | API, environment variables, backend internals. Both cite handoff files that aren't in the repo |
+| `README-backend.md` | API, environment variables, backend internals. It cites handoff files that aren't in the repo |
 | `apps/web/README.md`, `apps/upi-payer/README.md` | Those apps' setup |
 | `contracts/README.md` | Contract tests and deployment |

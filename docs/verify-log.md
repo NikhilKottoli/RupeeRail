@@ -46,6 +46,57 @@ Agent wallet on Arc testnet: `0x179dfbc07b23541849a2cb6d38d991d9ec7cda88`.
 
 An earlier attempt, offramp `0x4cb63e99…`, reached `COMPLETED` on-chain, but the phone didn't pay because the notification panel was covering Google Pay. That was fixed in `go_home`. It's also a real example of the parked gap: the chain said `COMPLETED` while the merchant got nothing.
 
+## Agent wallets
+
+Tested on 2026-11-07 through the running agent server, with real Circle and the live backend.
+
+| Check | Result |
+|---|---|
+| Reusing an unassigned wallet | Chef took `0x179d…da88` with no new wallet |
+| `circle wallet create --testnet` | New wallet `0x7d6d…0c95` for Stationer. This leaves 3 of Circle's 5 on Arc testnet |
+| `circle wallet fund` on a new wallet | 20 test USDC arrived within 10 seconds |
+| `approve` from a new wallet | Worked first time and deployed the smart account, with 133 bytes of code on Arc afterwards. No separate self-transfer was needed, and the balance stayed at 20 USDC |
+| Signatures from the new wallet | `isValidSignature` returned valid for a sample permit and intent |
+| Allowance as a per-agent budget | A real Chef run took its allowance from 5 to 4.989864 USDC, and Stationer's stayed at 1 |
+
+**Not yet shown:** a lock from the new wallet, or a rupee payment from either wallet through the agent server. The phone was locked during that Chef run (`isKeyguardShowing=true`), so the payer reported `couldn't get Google Pay to its home screen`. The panel said Not paid while the chain said `COMPLETED`, which is the known gap, handled as designed. That offramp, `0xc4ee6263…`, holds about 0.01 test USDC and can be disputed.
+
+## OpenAI limits
+
+Tested on 2026-11-06 with an OpenAI key. It allowed 50 requests per day for each model, read from `x-ratelimit-limit-requests` on `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5-mini`, `gpt-5-nano`, `gpt-4.1-mini`, `gpt-4o-mini` and `gpt-4o`. An order takes about 8 to 25 requests.
+
+| Model | With the real extension on `foodie`, against a fake off-ramp |
+|---|---|
+| `gpt-4.1-mini` | Vegetarian profile got Paneer butter masala, chicken profile got Chicken biryani, each in about 25 seconds |
+| `gpt-5.4-mini` | Completed `bazaar` and a vegetarian order, before candidates had surrounding text |
+| `gpt-5-mini` | Added 27 of one dish before the add guard existed. It correctly refused an over-limit dish |
+
+## Amazon
+
+Tested logged out, in a fresh profile, against a fake off-ramp. The real model searched `amazon.in`, added a pen to the cart and proceeded to checkout, using the extension's scripted clicks. It then asked for help at the sign-in page. Whether a logged-in checkout offers a usable UPI QR hasn't been tested.
+
+## Swiggy
+
+First real run on 2026-11-07, from a person's own Chrome, logged in, with `gpt-5-nano`. The agent set the location, found a restaurant and opened its menu, then failed to add anything:
+
+- **Identical buttons:** the menu's "ADD" buttons sat in cards with long descriptions, so they had no surrounding text and looked like one item. The add cap then blocked a second dish as "already in the cart", and the model wrongly decided the cart was over the limit. Fixed.
+- **The click had no effect:** Bhel Puri's ADD button stayed unchanged. Clicking the innermost element didn't help on a second run, while a person's click on the same button worked, so Swiggy most likely ignores scripted clicks. Clicks now go through `chrome.debugger` as real input. `apps/mock-store/foodie/` ignores scripted clicks in the same way, and passes. This hasn't been re-run on Swiggy, which returns a bot check to a fresh headless browser, so it can only be tested from a person's Chrome.
+- **A false "added":** clicking scrolls the page and reorders the candidates, which the first add check took as proof of an add. It now looks for real signs: the button turning into a quantity control, the cart changing, a new page or an options dialog.
+
+**Rehearsal loop, 2026-11-07, from a person's Chrome, with `gpt-4o-mini`:** real clicks work on Instamart: the "+" opened a pack dialog, and ADD and Confirm changed the item total to ₹72 and ₹93. Dialogs now list only their own controls. The window needs to be in front: Chrome's capture hung when it wasn't, so runs now raise it once and fall back to the debugger's capture. The model then kept adding different snacks, until its 50 requests for the day ran out, so code now sends it to the cart after 3 items. No run has reached Swiggy's cart or payment page yet.
+
+## NVIDIA models
+
+Tested on 2026-11-07 through `https://integrate.api.nvidia.com/v1`. `nvidia/nemotron-3.5-super-vl-120b-a12b` takes screenshots and is the one in use. `nvidia/nemotron-3-ultra-550b-a55b` refuses images, so the agent falls back to text only. Both completed the chicken order on `foodie`, in 31 and 46 seconds. Grok through a third-party service also worked, but ignored the structured-output request, so the agent now asks for JSON in the prompt as well, and tolerates text around it.
+
+## Amazon checkout
+
+Rehearsed on 2026-11-07 in a person's logged-in Chrome, with `nvidia/nemotron-3.5-super-vl-120b-a12b`. The agent searched, opened a product, added it, proceeded to checkout, selected **"Scan and Pay with UPI"**, confirmed it, and stopped at "Pay with UPI" with an order total of ₹256. So Amazon's desktop checkout does offer a UPI QR option. Still unknown: whether the QR reads, the backend accepts it, Google Pay's payee name passes the payer's check, and Amazon matches the payment to the order. Those need a real run.
+
+**First real run, the same day:** the agent placed the ₹256 order and read the QR, which pays `amazon@rapl`. The backend accepted it, and Stationer's wallet locked 2.6 USDC. The payer then refused before tapping Pay, with `UPI Lite not shown as the payment source`, because the phone's UPI Lite balance was too low. No rupees moved. Offramp `0xdbf48fb1…` can be disputed. So Amazon's QR isn't BharatQR. Still unknown: Google Pay's payee name check, and whether Amazon matches the payment to the order.
+
+An invisible "Add to cart shift + alt + K" keyboard control is still offered to the model. It wasted one click, and the agent then found the real button on its own.
+
 ## Arkiv
 
 - Rabdi testnet RPC answers: chain ID `0x76edaf` (7794095), 2-second blocks.
