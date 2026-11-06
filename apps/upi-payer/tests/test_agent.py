@@ -193,7 +193,7 @@ def test_the_local_caps_apply_whatever_the_backend_says(harness):
 @pytest.mark.parametrize("url,ok", [
     ("https://api.example.com", True), ("https://api.example.com/", True), ("http://10.0.0.5:8788", True),
     ("http://127.0.0.1:8788", True), ("http://localhost:8788", True),
-    ("http://api.example.com", False), ("http://8.8.8.8:8788", False), ("ftp://10.0.0.1", False), ("10.15.112.11", False),
+    ("http://api.example.com", False), ("http://8.8.8.8:8788", False), ("ftp://10.0.0.1", False), ("10.0.0.5", False),
 ])
 def test_token_is_only_sent_over_https_or_a_private_address(url, ok):
     if ok:
