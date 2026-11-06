@@ -24,6 +24,10 @@ contract ForkArcTest is ForkBase {
         vm.deal(to, amount * 1e12);
     }
 
+    function _nativeIsToken() internal pure override returns (bool) {
+        return true;
+    }
+
     function _rpcEnv() internal pure override returns (string memory) {
         return "ARC_RPC_URL";
     }

@@ -15,6 +15,7 @@ abstract contract ScanPayVaultBase is SigHelpers {
     bytes32 internal constant ID2 = keccak256("id2");
     bytes32 internal constant ID3 = keccak256("id3");
     bytes32 internal constant REF = keccak256("payoutRef");
+    bytes32 internal constant SALT = keccak256("qr-salt");
 
     ScanPayVault internal vault;
     address internal tokAddr;
@@ -22,6 +23,10 @@ abstract contract ScanPayVaultBase is SigHelpers {
 
     address internal owner = makeAddr("owner");
     address internal settler = makeAddr("settler");
+    address internal arbiter = makeAddr("arbiter");
+    address internal guardian = makeAddr("guardian");
+    address internal quoteSigner;
+    uint256 internal quotePk;
     address internal relayer = makeAddr("relayer");
     address internal rando = makeAddr("rando");
     address internal wallet = makeAddr("wallet");
@@ -32,6 +37,7 @@ abstract contract ScanPayVaultBase is SigHelpers {
     function setUp() public virtual {
         vm.warp(T0);
         (user, userPk) = makeAddrAndKey("user");
+        (quoteSigner, quotePk) = makeAddrAndKey("quoteSigner");
         token = new MockPermitToken("USDC", "2", 6);
         _deployVault(address(token));
         _mint(user, 10_000 * UNIT);
@@ -40,7 +46,7 @@ abstract contract ScanPayVaultBase is SigHelpers {
 
     function _deployVault(address t) internal {
         tokAddr = t;
-        vault = new ScanPayVault(IERC20(t), owner, settler);
+        vault = new ScanPayVault(IERC20(t), owner, settler, quoteSigner, arbiter);
     }
 
     // ---- token-agnostic helpers (work for no-return tokens too) ----
@@ -71,26 +77,29 @@ abstract contract ScanPayVaultBase is SigHelpers {
             amount: amount,
             inrPaise: 830_000,
             rateE6: 83_000_000,
-            qrText: qr,
+            qrCommitment: _commit(SALT, qr),
             deadline: uint64(block.timestamp + 1 hours)
         });
     }
 
-    /// @dev Builds intent signature + permit (for it.amount to the vault). Call BEFORE vm.expectRevert.
+    /// @dev Builds user signature, quote signature (by quoteSigner) and permit (for it.amount to the
+    /// vault). Call BEFORE vm.expectRevert.
     function _prep(ScanPayVault.OfframpIntent memory it, uint256 intentPk, uint256 permitPk)
         internal
         view
-        returns (bytes memory sig, ScanPayVault.PermitSig memory ps)
+        returns (bytes memory sig, bytes memory qsig, ScanPayVault.PermitSig memory ps)
     {
         sig = _signIntent(vault, intentPk, it);
+        qsig = _signQuote(vault, quotePk, it);
         ps = _signPermit(tokAddr, permitPk, address(vault), it.amount, block.timestamp + 1 hours);
     }
 
-    /// @dev Signs the intent with `pk` and a matching permit from `permitPk`; relays from `relayer`.
+    /// @dev Signs the intent with `pk`, the quote with the quote signer and a matching permit from
+    /// `permitPk`; relays from `relayer`.
     function _relay(ScanPayVault.OfframpIntent memory it, uint256 intentPk, uint256 permitPk) internal {
-        (bytes memory sig, ScanPayVault.PermitSig memory ps) = _prep(it, intentPk, permitPk);
+        (bytes memory sig, bytes memory qsig, ScanPayVault.PermitSig memory ps) = _prep(it, intentPk, permitPk);
         vm.prank(relayer);
-        vault.offramp(it, sig, ps);
+        vault.offramp(it, sig, qsig, ps);
     }
 
     struct Off {
@@ -100,21 +109,22 @@ abstract contract ScanPayVaultBase is SigHelpers {
         uint64 lockedAt;
         uint64 completedAt;
         ScanPayVault.Status status;
-        bytes32 qrHash;
+        bytes32 qrCommitment;
     }
 
     struct Dl {
+        uint64 completableAt;
         uint64 reclaimableAt;
-        uint64 reversibleUntil;
         uint64 disputeWindow;
+        uint64 releasableAt;
     }
 
     function _off(bytes32 id) internal view returns (Off memory o) {
-        (o.user, o.amount, o.inrPaise, o.lockedAt, o.completedAt, o.status, o.qrHash) = vault.offramps(id);
+        (o.user, o.amount, o.inrPaise, o.lockedAt, o.completedAt, o.status, o.qrCommitment) = vault.offramps(id);
     }
 
     function _dl(bytes32 id) internal view returns (Dl memory d) {
-        (d.reclaimableAt, d.reversibleUntil, d.disputeWindow) = vault.deadlines(id);
+        (d.completableAt, d.reclaimableAt, d.disputeWindow, d.releasableAt) = vault.deadlines(id);
     }
 
     function _qr(uint256 n) internal pure returns (string memory) {
@@ -129,11 +139,23 @@ abstract contract ScanPayVaultBase is SigHelpers {
         _relay(it, userPk, userPk);
     }
 
+    /// @dev Unique non-zero payoutRef per id (payout refs may never be reused); ID1 keeps plain REF.
+    function _refOf(bytes32 id) internal pure returns (bytes32) {
+        return id == ID1 ? REF : keccak256(abi.encode(REF, id));
+    }
+
     function _lockComplete(bytes32 id, uint256 amount) internal {
         _lock(id, amount);
         skip(15);
         vm.prank(settler);
-        vault.completeOfframp(id, REF);
+        vault.completeOfframp(id, _refOf(id));
+    }
+
+    /// @dev Lock, complete and let the dispute window elapse, then release into the pool.
+    function _lockCompleteRelease(bytes32 id, uint256 amount) internal {
+        _lockComplete(id, amount);
+        vm.warp(_dl(id).releasableAt);
+        vault.releaseOfframp(id);
     }
 
     function _fund(uint256 amount) internal {
@@ -159,6 +181,10 @@ abstract contract ScanPayVaultBase is SigHelpers {
     }
 
     function _assertAccounting() internal view {
-        assertEq(_bal(address(vault)), vault.escrowedTotal() + vault.poolBalance(), "balance != escrow+pool");
+        assertGe(
+            _bal(address(vault)),
+            vault.escrowedTotal() + vault.heldTotal() + vault.poolBalance(),
+            "balance < escrow+held+pool"
+        );
     }
 }

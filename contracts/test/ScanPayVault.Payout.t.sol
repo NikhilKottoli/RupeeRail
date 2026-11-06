@@ -4,16 +4,27 @@ pragma solidity ^0.8.20;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ScanPayVault} from "../src/ScanPayVault.sol";
-import {ScanPayVaultBase} from "./ScanPayVaultBase.t.sol";
+import {ScanPayVaultUnitBase} from "./ScanPayVaultUnitBase.t.sol";
 
-/// @dev onramp / emitPayment / daily cap / fundPool / withdrawPool unit tests.
-contract ScanPayVaultPayoutTest is ScanPayVaultBase {
+/// @dev onramp / daily cap / fundPool / withdrawPool / sweepSurplus unit tests.
+contract ScanPayVaultPayoutTest is ScanPayVaultUnitBase {
     bytes32 internal constant ORD1 = keccak256("order1");
     bytes32 internal constant ORD2 = keccak256("order2");
 
     function setUp() public override {
         super.setUp();
         _fund(2_000 * UNIT);
+    }
+
+    function _drainPool() internal {
+        uint256 pool = vault.poolBalance();
+        vm.prank(owner);
+        vault.withdrawPool(owner, pool);
+    }
+
+    function _on(uint256 n, uint256 amt) internal {
+        vm.prank(settler);
+        vault.onramp(keccak256(abi.encode("ord", n)), wallet, amt, 1);
     }
 
     // ------------------------------------------------------------ onramp
@@ -34,8 +45,8 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
     }
 
     function test_Onramp_OnlySettler() public {
-        address[3] memory callers = [owner, user, rando];
-        for (uint256 i; i < 3; i++) {
+        address[5] memory callers = [owner, user, rando, arbiter, guardian];
+        for (uint256 i; i < callers.length; i++) {
             vm.expectRevert(abi.encodeWithSelector(ScanPayVault.UnauthorizedSettler.selector, callers[i]));
             vm.prank(callers[i]);
             vault.onramp(ORD1, wallet, UNIT, 1);
@@ -55,8 +66,10 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
 
     function test_Onramp_InvalidInputsRevert() public {
         vm.startPrank(settler);
-        vm.expectRevert(ScanPayVault.ZeroAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(0)));
         vault.onramp(ORD1, address(0), UNIT, 1);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(vault)));
+        vault.onramp(ORD1, address(vault), UNIT, 1);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidAmount.selector, 0));
         vault.onramp(ORD1, wallet, 0, 1);
         uint256 pool = vault.poolBalance();
@@ -67,115 +80,57 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
     }
 
     function test_Onramp_PausedReverts() public {
-        vm.prank(owner);
-        vault.setPaused(true);
+        _pause();
         vm.expectRevert(Pausable.EnforcedPause.selector);
         vm.prank(settler);
         vault.onramp(ORD1, wallet, UNIT, 1);
     }
 
-    // ------------------------------------------------------------ emitPayment
-    function test_EmitPayment_PaysWalletAndEmits() public {
-        uint256 pool = vault.poolBalance();
-        vm.expectEmit(true, false, false, true, address(vault));
-        emit ScanPayVault.PaymentEmitted(wallet, 7 * UNIT);
-        vm.prank(settler);
-        vault.emitPayment(wallet, 7 * UNIT);
-        assertEq(_bal(wallet), 7 * UNIT);
-        assertEq(vault.poolBalance(), pool - 7 * UNIT);
-        assertEq(vault.emittedInWindow(), 7 * UNIT);
-        _assertAccounting();
-    }
-
-    function test_EmitPayment_NoIdSoRepeatPaysTwice() public {
-        vm.startPrank(settler);
-        vault.emitPayment(wallet, UNIT);
-        vault.emitPayment(wallet, UNIT);
-        vm.stopPrank();
-        assertEq(_bal(wallet), 2 * UNIT);
-    }
-
-    function test_EmitPayment_OnlySettler() public {
-        address[3] memory callers = [owner, user, rando];
-        for (uint256 i; i < 3; i++) {
-            vm.expectRevert(abi.encodeWithSelector(ScanPayVault.UnauthorizedSettler.selector, callers[i]));
-            vm.prank(callers[i]);
-            vault.emitPayment(wallet, UNIT);
-        }
-    }
-
-    function test_EmitPayment_InvalidInputsRevert() public {
-        vm.startPrank(settler);
-        vm.expectRevert(ScanPayVault.ZeroAddress.selector);
-        vault.emitPayment(address(0), UNIT);
-        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidAmount.selector, 0));
-        vault.emitPayment(wallet, 0);
-        uint256 pool = vault.poolBalance();
-        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InsufficientPoolBalance.selector, pool, pool + 1));
-        vault.emitPayment(wallet, pool + 1);
-        vm.stopPrank();
-    }
-
-    function test_EmitPayment_PausedReverts() public {
-        vm.prank(owner);
-        vault.setPaused(true);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
-        vm.prank(settler);
-        vault.emitPayment(wallet, UNIT);
-    }
-
-    function test_EmitPayment_CannotUseEscrow() public {
-        // drain pool entirely, then lock escrow; payout must still fail
-        uint256 pool = vault.poolBalance();
-        vm.prank(owner);
-        vault.withdrawPool(owner, pool);
+    function test_Onramp_CannotUseEscrowOrHeld() public {
+        _drainPool();
         _lock(ID1, 50 * UNIT);
+        _lockComplete(ID2, 20 * UNIT);
+        assertEq(_bal(address(vault)), 70 * UNIT);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InsufficientPoolBalance.selector, 0, UNIT));
         vm.prank(settler);
-        vault.emitPayment(wallet, UNIT);
+        vault.onramp(ORD1, wallet, UNIT, 1);
         assertEq(vault.escrowedTotal(), 50 * UNIT);
+        assertEq(vault.heldTotal(), 20 * UNIT);
     }
 
     // ------------------------------------------------------------ daily cap
-    function test_Cap_SharedByOnrampAndEmit() public {
+    function test_Cap_ConsumedByOnramps() public {
         assertEq(vault.remainingDailyCap(), 1000 * UNIT);
-        vm.startPrank(settler);
-        vault.onramp(ORD1, wallet, 600 * UNIT, 1);
+        _on(1, 600 * UNIT);
         assertEq(vault.remainingDailyCap(), 400 * UNIT);
-        vault.emitPayment(wallet, 400 * UNIT);
+        _on(2, 400 * UNIT);
         assertEq(vault.remainingDailyCap(), 0);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 0, 1));
-        vault.emitPayment(wallet, 1);
-        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 0, 1));
+        vm.prank(settler);
         vault.onramp(ORD2, wallet, 1, 1);
-        vm.stopPrank();
         assertFalse(vault.onrampDone(ORD2));
     }
 
     function test_Cap_ExceedReportsRemaining() public {
-        vm.prank(settler);
-        vault.emitPayment(wallet, 990 * UNIT);
+        _on(1, 990 * UNIT);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 10 * UNIT, 10 * UNIT + 1));
         vm.prank(settler);
-        vault.emitPayment(wallet, 10 * UNIT + 1);
-        vm.prank(settler);
-        vault.emitPayment(wallet, 10 * UNIT); // exactly remaining is fine
+        vault.onramp(ORD1, wallet, 10 * UNIT + 1, 1);
+        _on(2, 10 * UNIT); // exactly remaining is fine
     }
 
     function test_Cap_FixedWindowBoundary() public {
-        vm.prank(settler);
-        vault.emitPayment(wallet, 1000 * UNIT);
+        _on(1, 1000 * UNIT);
         vm.warp(T0 + 1 days - 1);
         assertEq(vault.remainingDailyCap(), 0);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 0, 1));
         vm.prank(settler);
-        vault.emitPayment(wallet, 1);
+        vault.onramp(ORD1, wallet, 1, 1);
 
         vm.warp(T0 + 1 days);
-        assertEq(vault.remainingDailyCap(), 1000 * UNIT); // view shows full cap before the new window starts
+        assertEq(vault.remainingDailyCap(), 1000 * UNIT);
         assertEq(vault.emittedInWindow(), 1000 * UNIT); // storage not rolled yet
-        vm.prank(settler);
-        vault.emitPayment(wallet, 300 * UNIT);
+        _on(2, 300 * UNIT);
         assertEq(vault.emitWindowStart(), T0 + 1 days);
         assertEq(vault.emittedInWindow(), 300 * UNIT);
         assertEq(vault.remainingDailyCap(), 700 * UNIT);
@@ -183,22 +138,20 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
 
     function test_Cap_WindowIsFixedNotRolling() public {
         vm.warp(T0 + 23 hours);
-        vm.prank(settler);
-        vault.emitPayment(wallet, 500 * UNIT);
+        _on(1, 500 * UNIT);
         assertEq(vault.emitWindowStart(), T0, "payout inside window must not move its start");
         vm.warp(T0 + 24 hours);
         assertEq(vault.remainingDailyCap(), 1000 * UNIT);
     }
 
     function test_Cap_LoweringBelowUsedGivesZeroRemaining() public {
-        vm.prank(settler);
-        vault.emitPayment(wallet, 500 * UNIT);
+        _on(1, 500 * UNIT);
         vm.prank(owner);
         vault.setDailyEmitCap(100 * UNIT);
         assertEq(vault.remainingDailyCap(), 0);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 0, 1));
         vm.prank(settler);
-        vault.emitPayment(wallet, 1);
+        vault.onramp(ORD1, wallet, 1, 1);
         vm.prank(owner);
         vault.setDailyEmitCap(600 * UNIT);
         assertEq(vault.remainingDailyCap(), 100 * UNIT);
@@ -209,27 +162,25 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
         vault.setDailyEmitCap(0);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 0, 1));
         vm.prank(settler);
-        vault.emitPayment(wallet, 1);
+        vault.onramp(ORD1, wallet, 1, 1);
     }
 
     function test_Cap_FailedPayoutDoesNotConsumeCap() public {
         uint256 pool = vault.poolBalance();
-        vm.prank(settler);
-        vault.emitPayment(wallet, 100 * UNIT);
+        _on(1, 100 * UNIT);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InsufficientPoolBalance.selector, pool - 100 * UNIT, pool));
         vm.prank(settler);
-        vault.emitPayment(wallet, pool);
+        vault.onramp(ORD1, wallet, pool, 1);
         assertEq(vault.emittedInWindow(), 100 * UNIT);
         assertEq(vault.remainingDailyCap(), 900 * UNIT);
     }
 
     function test_Cap_FailedPayoutInNewWindowDoesNotRollWindow() public {
-        vm.prank(settler);
-        vault.emitPayment(wallet, 100 * UNIT);
+        _on(1, 100 * UNIT);
         vm.warp(T0 + 2 days);
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 1000 * UNIT, 1001 * UNIT));
         vm.prank(settler);
-        vault.emitPayment(wallet, 1001 * UNIT);
+        vault.onramp(ORD1, wallet, 1001 * UNIT, 1);
         assertEq(vault.emitWindowStart(), T0);
         assertEq(vault.emittedInWindow(), 100 * UNIT);
     }
@@ -239,8 +190,7 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
         uint256 pool = vault.poolBalance();
         _mint(rando, 9 * UNIT);
         _approve(rando, address(vault), 9 * UNIT);
-        vm.prank(owner);
-        vault.setPaused(true); // funding allowed while paused
+        _pause(); // funding allowed while paused
         vm.expectEmit(true, false, false, true, address(vault));
         emit ScanPayVault.PoolFunded(rando, 9 * UNIT);
         vm.prank(rando);
@@ -286,8 +236,8 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
     }
 
     function test_Withdraw_OnlyOwner() public {
-        address[3] memory callers = [settler, rando, user];
-        for (uint256 i; i < 3; i++) {
+        address[5] memory callers = [settler, rando, user, arbiter, guardian];
+        for (uint256 i; i < callers.length; i++) {
             vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, callers[i]));
             vm.prank(callers[i]);
             vault.withdrawPool(callers[i], UNIT);
@@ -300,33 +250,162 @@ contract ScanPayVaultPayoutTest is ScanPayVaultBase {
         vm.prank(owner);
         vault.withdrawPool(owner, pool + 1);
         vm.prank(owner);
-        vault.withdrawPool(owner, pool); // exactly the pool is fine
+        vault.withdrawPool(owner, pool);
         assertEq(vault.poolBalance(), 0);
     }
 
-    function test_Withdraw_CannotTouchEscrow() public {
-        uint256 pool = vault.poolBalance();
-        vm.prank(owner);
-        vault.withdrawPool(owner, pool);
+    function test_Withdraw_CannotTouchEscrowOrHeld() public {
+        _drainPool();
         _lock(ID1, 60 * UNIT);
-        assertEq(_bal(address(vault)), 60 * UNIT); // token balance covers the escrow
+        _lockComplete(ID2, 10 * UNIT);
+        assertEq(_bal(address(vault)), 70 * UNIT); // token balance covers escrow + held
         vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InsufficientPoolBalance.selector, 0, 1));
         vm.prank(owner);
         vault.withdrawPool(owner, 1);
         assertEq(vault.escrowedTotal(), 60 * UNIT);
+        assertEq(vault.heldTotal(), 10 * UNIT);
     }
 
-    function test_Withdraw_ZeroAddressReverts() public {
-        vm.expectRevert(ScanPayVault.ZeroAddress.selector);
-        vm.prank(owner);
+    function test_Withdraw_InvalidRecipientReverts() public {
+        vm.startPrank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(0)));
         vault.withdrawPool(address(0), UNIT);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(vault)));
+        vault.withdrawPool(address(vault), UNIT);
+        vm.stopPrank();
     }
 
     function test_Withdraw_AllowedWhilePaused() public {
-        vm.startPrank(owner);
-        vault.setPaused(true);
+        _pause();
+        vm.prank(owner);
         vault.withdrawPool(owner, UNIT);
+        assertEq(_bal(owner), UNIT);
+    }
+
+    // ------------------------------------------------------------ held funds are not movable
+    function test_Held_EmitPaymentSelectorNoLongerExists() public {
+        _lockComplete(ID1, AMT);
+        uint256 vaultBal = _bal(address(vault));
+        bytes memory data = abi.encodeWithSignature("emitPayment(address,uint256)", wallet, UNIT);
+        address[2] memory callers = [settler, owner];
+        for (uint256 i; i < callers.length; i++) {
+            vm.prank(callers[i]);
+            (bool ok,) = address(vault).call(data);
+            assertFalse(ok, "emitPayment must not exist");
+        }
+        assertEq(_bal(address(vault)), vaultBal);
+        assertEq(_bal(wallet), 0);
+    }
+
+    function test_Held_WithdrawPoolRevertsAboveAccountedPoolEvenIfTokenBalanceCoversHeld() public {
+        _drainPool();
+        _lockComplete(ID1, AMT);
+        assertEq(vault.poolBalance(), 0);
+        assertEq(_bal(address(vault)), AMT);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InsufficientPoolBalance.selector, 0, AMT));
+        vm.prank(owner);
+        vault.withdrawPool(owner, AMT);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InsufficientPoolBalance.selector, 0, 1));
+        vm.prank(owner);
+        vault.withdrawPool(owner, 1);
+        assertEq(_bal(address(vault)), AMT);
+    }
+
+    function test_Held_SweepSurplusIsNoOpWhileFundsHeldOrEscrowed() public {
+        _lock(ID1, AMT);
+        _lockComplete(ID2, AMT);
+        uint256 vaultBal = _bal(address(vault));
+        uint256 ownerBal = _bal(owner);
+        uint256 e = vault.escrowedTotal();
+        uint256 h = vault.heldTotal();
+        uint256 p = vault.poolBalance();
+        vm.recordLogs();
+        vm.prank(owner);
+        vault.sweepSurplus(owner);
+        assertEq(vm.getRecordedLogs().length, 0, "no event on no-op");
+        assertEq(_bal(address(vault)), vaultBal);
+        assertEq(_bal(owner), ownerBal);
+        assertEq(vault.escrowedTotal(), e);
+        assertEq(vault.heldTotal(), h);
+        assertEq(vault.poolBalance(), p);
+    }
+
+    // ------------------------------------------------------------ sweepSurplus
+    function test_Sweep_SendsExactlySurplusAndEmits() public {
+        _lock(ID1, 5 * UNIT);
+        _lockComplete(ID2, 6 * UNIT);
+        vm.prank(funder);
+        token.transfer(address(vault), 3 * UNIT + 7);
+        uint256 e = vault.escrowedTotal();
+        uint256 h = vault.heldTotal();
+        uint256 p = vault.poolBalance();
+        address to = makeAddr("sweepTo");
+
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit ScanPayVault.SurplusSwept(to, 3 * UNIT + 7);
+        vm.prank(owner);
+        vault.sweepSurplus(to);
+
+        assertEq(_bal(to), 3 * UNIT + 7);
+        assertEq(vault.escrowedTotal(), e);
+        assertEq(vault.heldTotal(), h);
+        assertEq(vault.poolBalance(), p);
+        assertEq(_bal(address(vault)), e + h + p);
+        _assertAccounting();
+    }
+
+    function test_Sweep_SecondCallIsNoOp() public {
+        vm.prank(funder);
+        token.transfer(address(vault), 4 * UNIT);
+        address to = makeAddr("sweepTo");
+        vm.prank(owner);
+        vault.sweepSurplus(to);
+        assertEq(_bal(to), 4 * UNIT);
+        vm.recordLogs();
+        vm.prank(owner);
+        vault.sweepSurplus(to);
+        assertEq(vm.getRecordedLogs().length, 0);
+        assertEq(_bal(to), 4 * UNIT);
+    }
+
+    function test_Sweep_OnlyOwner() public {
+        vm.prank(funder);
+        token.transfer(address(vault), UNIT);
+        address[5] memory callers = [settler, rando, user, arbiter, guardian];
+        for (uint256 i; i < callers.length; i++) {
+            vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, callers[i]));
+            vm.prank(callers[i]);
+            vault.sweepSurplus(callers[i]);
+        }
+        assertEq(_bal(rando), 0);
+    }
+
+    function test_Sweep_InvalidRecipientReverts() public {
+        vm.prank(funder);
+        token.transfer(address(vault), UNIT);
+        vm.startPrank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(0)));
+        vault.sweepSurplus(address(0));
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(vault)));
+        vault.sweepSurplus(address(vault));
         vm.stopPrank();
+    }
+
+    function test_Sweep_InvalidRecipientRevertsEvenWithoutSurplus() public {
+        vm.startPrank(owner);
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(0)));
+        vault.sweepSurplus(address(0));
+        vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InvalidRecipient.selector, address(vault)));
+        vault.sweepSurplus(address(vault));
+        vm.stopPrank();
+    }
+
+    function test_Sweep_WorksWhilePaused() public {
+        vm.prank(funder);
+        token.transfer(address(vault), UNIT);
+        _pause();
+        vm.prank(owner);
+        vault.sweepSurplus(owner);
         assertEq(_bal(owner), UNIT);
     }
 }

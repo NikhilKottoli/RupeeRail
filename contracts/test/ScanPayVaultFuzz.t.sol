@@ -2,19 +2,10 @@
 pragma solidity ^0.8.20;
 
 import {ScanPayVault} from "../src/ScanPayVault.sol";
-import {ScanPayVaultBase} from "./ScanPayVaultBase.t.sol";
+import {ScanPayVaultFuzzBase} from "./ScanPayVaultFuzzBase.t.sol";
 
-/// @dev Fuzz tests over amounts, qrText, timing and payout limits.
-contract ScanPayVaultFuzzTest is ScanPayVaultBase {
-    uint256 internal constant U96 = type(uint96).max;
-
-    function _tryOfframp(ScanPayVault.OfframpIntent memory it, bytes4 expectedErr, bytes memory errArgs) internal {
-        (bytes memory sig, ScanPayVault.PermitSig memory ps) = _prep(it, userPk, userPk);
-        if (expectedErr != bytes4(0)) vm.expectRevert(bytes.concat(expectedErr, errArgs));
-        vm.prank(relayer);
-        vault.offramp(it, sig, ps);
-    }
-
+/// @dev Fuzz tests over amounts, timing, payouts vs pool/cap, accounting and surplus.
+contract ScanPayVaultFuzzTest is ScanPayVaultFuzzBase {
     // ------------------------------------------------------------ amounts
     function testFuzz_AmountAgainstDefaultMax(uint256 amount) public {
         amount = bound(amount, 0, 300 * UNIT);
@@ -35,7 +26,7 @@ contract ScanPayVaultFuzzTest is ScanPayVaultBase {
         offset = bound(offset, 0, 3);
         uint256 amount = U96 - 1 + offset; // U96-1, U96, U96+1, U96+2
         vm.prank(owner);
-        vault.setMaxOfframpAmount(U96);
+        vault.setLimits(U96, 1000 * UNIT);
         _mint(user, amount);
         ScanPayVault.OfframpIntent memory it = _intent(ID1, user, amount, QR);
         if (amount > U96) {
@@ -48,13 +39,25 @@ contract ScanPayVaultFuzzTest is ScanPayVaultBase {
         }
     }
 
+    function testFuzz_SetLimitsAcceptsMaxIffFitsUint96(uint256 max, uint256 cap) public {
+        max = bound(max, U96 - 3, U96 + 3);
+        if (max > U96) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.OfframpAmountTooLarge.selector, max));
+        vm.prank(owner);
+        vault.setLimits(max, cap);
+        if (max <= U96) {
+            assertEq(vault.maxOfframpAmount(), max);
+            assertEq(vault.dailyEmitCap(), cap);
+        } else {
+            assertEq(vault.maxOfframpAmount(), 100 * UNIT);
+        }
+    }
+
     function testFuzz_LargeAmountRoundTripsInStruct(uint256 amount) public {
         amount = bound(amount, 1, U96);
         vm.prank(owner);
-        vault.setMaxOfframpAmount(U96);
+        vault.setLimits(U96, 1000 * UNIT);
         _mint(user, amount);
-        ScanPayVault.OfframpIntent memory it = _intent(ID1, user, amount, QR);
-        _tryOfframp(it, bytes4(0), "");
+        _tryOfframp(_intent(ID1, user, amount, QR), bytes4(0), "");
         assertEq(uint256(_off(ID1).amount), amount);
         assertEq(vault.escrowedTotal(), amount);
         assertEq(_bal(address(vault)), amount);
@@ -70,126 +73,105 @@ contract ScanPayVaultFuzzTest is ScanPayVaultBase {
         assertEq(vault.escrowedTotal(), max);
     }
 
-    // ------------------------------------------------------------ qrText
-    function testFuzz_QrLengthValidIff1To512(uint256 len) public {
-        len = bound(len, 0, 600);
-        ScanPayVault.OfframpIntent memory it = _intent(ID1, user, UNIT, _qr(len));
-        if (len == 0 || len > 512) {
-            _tryOfframp(it, ScanPayVault.InvalidQrLength.selector, abi.encode(len));
-            assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.NONE));
-        } else {
-            _tryOfframp(it, bytes4(0), "");
-            assertEq(_off(ID1).qrHash, keccak256(bytes(_qr(len))));
-        }
-    }
-
-    function _normalize(bytes memory raw) internal pure returns (string memory) {
-        uint256 n = raw.length;
-        if (n == 0) return string(new bytes(1)); // a single NUL byte
-        if (n > 512) n = 512;
-        bytes memory b = new bytes(n);
-        for (uint256 i; i < n; i++) b[i] = raw[i];
-        return string(b);
-    }
-
-    function testFuzz_ArbitraryQrBytesRoundTripInEventAndHash(bytes memory raw) public {
-        string memory qr = _normalize(raw);
-        ScanPayVault.OfframpIntent memory it = _intent(ID1, user, UNIT, qr);
-        (bytes memory sig, ScanPayVault.PermitSig memory ps) = _prep(it, userPk, userPk);
-        vm.expectEmit(true, true, false, true, address(vault));
-        emit ScanPayVault.OfframpLocked(ID1, user, UNIT, it.inrPaise, it.rateE6, qr);
-        vm.prank(relayer);
-        vault.offramp(it, sig, ps);
-        assertEq(_off(ID1).qrHash, keccak256(bytes(qr)));
-    }
-
-    function testFuzz_SignatureBindsEveryQrByte(bytes memory raw, uint256 idx) public {
-        string memory qr = _normalize(raw);
-        ScanPayVault.OfframpIntent memory it = _intent(ID1, user, UNIT, qr);
-        (bytes memory sig, ScanPayVault.PermitSig memory ps) = _prep(it, userPk, userPk);
-        bytes memory tampered = bytes(qr);
-        idx = bound(idx, 0, tampered.length - 1);
-        tampered[idx] = bytes1(uint8(tampered[idx]) ^ 0x01);
-        it.qrText = string(tampered);
-        vm.expectRevert(ScanPayVault.InvalidSignature.selector);
-        vault.offramp(it, sig, ps);
-    }
-
-    function test_Qr_MultibyteAndNulBytesRoundTrip() public {
-        string[3] memory qrs = [unicode"upi://pay?pn=₹ 日本語 🚀", string(abi.encodePacked("a", bytes1(0x00), "b")), string(hex"00")];
-        for (uint256 i; i < qrs.length; i++) {
-            bytes32 id = bytes32(i + 1);
-            ScanPayVault.OfframpIntent memory it = _intent(id, user, UNIT, qrs[i]);
-            (bytes memory sig, ScanPayVault.PermitSig memory ps) = _prep(it, userPk, userPk);
-            vm.expectEmit(true, true, false, true, address(vault));
-            emit ScanPayVault.OfframpLocked(id, user, UNIT, it.inrPaise, it.rateE6, qrs[i]);
-            vault.offramp(it, sig, ps);
-            assertEq(_off(id).qrHash, keccak256(bytes(qrs[i])));
-        }
-    }
-
     // ------------------------------------------------------------ timing
-    function testFuzz_CompleteTiming(uint256 delay, uint256 dt) public {
-        delay = bound(delay, 0, 1 days);
-        dt = bound(dt, 0, 2 days);
-        vm.prank(owner);
-        vault.setCompleteDelay(delay);
-        _lock(ID1, UNIT);
-        skip(dt);
-        if (dt < delay) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.TooEarly.selector, T0 + delay));
-        vm.prank(settler);
-        vault.completeOfframp(ID1, REF);
-        if (dt >= delay) assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.COMPLETED));
-        else assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.LOCKED));
-    }
-
-    function testFuzz_ReclaimTiming(uint256 delay, uint256 dt) public {
-        delay = bound(delay, 1 hours, 30 days);
+    function testFuzz_ReclaimTiming(uint256 delay, uint256 dt, bool byUser) public {
+        delay = bound(delay, 1 hours + 15, 30 days);
         dt = bound(dt, 0, delay + 2 hours);
         vm.prank(owner);
         vault.setReclaimDelay(delay);
         _lock(ID1, UNIT);
         skip(dt);
         if (dt < delay) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.TooEarly.selector, T0 + delay));
-        vm.prank(user);
+        vm.prank(byUser ? user : rando); // anyone may reclaim
         vault.reclaimOfframp(ID1);
         if (dt >= delay) {
             assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.REFUNDED));
             assertEq(_bal(user), 10_000 * UNIT);
+        } else {
+            assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.LOCKED));
         }
         _assertAccounting();
     }
 
-    function testFuzz_ReverseTiming(uint256 window, uint256 dt) public {
-        window = bound(window, 0, 30 days);
-        dt = bound(dt, 0, window + 2 hours);
+    /// @dev Sets the dispute window, then lock + complete ID1; returns completion time.
+    function _completedWithWindow(uint256 window) internal returns (uint256 tc) {
         vm.prank(owner);
         vault.setDisputeWindow(window);
         _lockComplete(ID1, UNIT);
-        uint256 tc = _completedAt(ID1);
+        tc = _completedAt(ID1);
+        assertEq(_dl(ID1).releasableAt, tc + window);
+    }
+
+    function testFuzz_ReverseTiming(uint256 window, uint256 dt) public {
+        window = bound(window, 1 hours, 30 days);
+        dt = bound(dt, 0, window + 2 hours);
+        uint256 tc = _completedWithWindow(window);
         vm.warp(tc + dt);
-        if (dt > window) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DisputeWindowExpired.selector, tc + window));
+        if (dt >= window) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DisputeWindowExpired.selector, tc + window));
         vm.prank(settler);
         vault.reverseOfframp(ID1);
-        if (dt <= window) assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.REVERSED));
+        if (dt < window) assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.REVERSED));
+        else assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.COMPLETED));
         _assertAccounting();
     }
 
+    function testFuzz_ReleaseTiming(uint256 window, uint256 dt) public {
+        window = bound(window, 1 hours, 30 days);
+        dt = bound(dt, 0, window + 2 hours);
+        uint256 tc = _completedWithWindow(window);
+        vm.warp(tc + dt);
+        if (dt < window) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.TooEarly.selector, tc + window));
+        vm.prank(rando);
+        vault.releaseOfframp(ID1);
+        if (dt >= window) {
+            assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.RELEASED));
+            assertEq(vault.poolBalance(), UNIT);
+            assertEq(vault.heldTotal(), 0);
+        } else {
+            assertEq(vault.poolBalance(), 0);
+            assertEq(vault.heldTotal(), UNIT);
+        }
+        _assertAccounting();
+    }
+
+    function testFuzz_DisputeTiming(uint256 window, uint256 dt) public {
+        window = bound(window, 1 hours, 30 days);
+        dt = bound(dt, 0, window + 2 hours);
+        uint256 tc = _completedWithWindow(window);
+        vm.warp(tc + dt);
+        if (dt >= window) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DisputeWindowExpired.selector, tc + window));
+        vm.prank(user);
+        vault.disputeOfframp(ID1);
+        if (dt < window) assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.DISPUTED));
+        else assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.COMPLETED));
+    }
+
     function testFuzz_SnapshotsIgnoreLaterSetterChanges(uint256 newReclaim, uint256 newWindow, uint256 dt) public {
-        newReclaim = bound(newReclaim, 1 hours, 30 days);
-        newWindow = bound(newWindow, 0, 30 days);
+        newReclaim = bound(newReclaim, 1 hours + 15, 30 days);
+        newWindow = bound(newWindow, 1 hours, 30 days);
         dt = bound(dt, 0, 60 days);
         _lock(ID1, UNIT);
         vm.startPrank(owner);
         vault.setReclaimDelay(newReclaim);
         vault.setDisputeWindow(newWindow);
         vm.stopPrank();
+        assertEq(_dl(ID1).completableAt, T0 + 15);
         assertEq(_dl(ID1).reclaimableAt, T0 + 24 hours);
         assertEq(_dl(ID1).disputeWindow, 24 hours);
         skip(dt);
         if (dt < 24 hours) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.TooEarly.selector, T0 + 24 hours));
         vm.prank(user);
         vault.reclaimOfframp(ID1);
+    }
+
+    function testFuzz_CompletionUsesLockTimeDisputeWindow(uint256 newWindow) public {
+        newWindow = bound(newWindow, 1 hours, 30 days);
+        _lock(ID1, UNIT);
+        vm.prank(owner);
+        vault.setDisputeWindow(newWindow);
+        skip(15);
+        _complete(ID1);
+        assertEq(_dl(ID1).releasableAt, block.timestamp + 24 hours);
     }
 
     // ------------------------------------------------------------ payouts vs pool and cap
@@ -217,6 +199,23 @@ contract ScanPayVaultFuzzTest is ScanPayVaultBase {
         _assertAccounting();
     }
 
+    function testFuzz_OnrampCannotTouchEscrowOrHeld(uint256 amount, uint256 pool) public {
+        pool = bound(pool, 0, 200 * UNIT);
+        amount = bound(amount, 1, 600 * UNIT);
+        if (pool > 0) _fund(pool);
+        _lockComplete(ID1, 40 * UNIT); // held
+        _lock(ID2, 30 * UNIT); // escrowed
+        if (amount > pool) {
+            vm.expectRevert(abi.encodeWithSelector(ScanPayVault.InsufficientPoolBalance.selector, pool, amount));
+        }
+        vm.prank(settler);
+        vault.onramp(ID3, wallet, amount, 1);
+        assertEq(vault.heldTotal(), 40 * UNIT);
+        assertEq(vault.escrowedTotal(), 30 * UNIT);
+        assertGe(_bal(address(vault)), 70 * UNIT);
+        _assertAccounting();
+    }
+
     function testFuzz_CumulativePaymentsNeverExceedCapInWindow(uint256 a, uint256 b, uint256 c, uint256 d) public {
         _fund(3000 * UNIT);
         uint256[4] memory xs = [a, b, c, d];
@@ -224,7 +223,7 @@ contract ScanPayVaultFuzzTest is ScanPayVaultBase {
         for (uint256 i; i < 4; i++) {
             uint256 x = bound(xs[i], 1, 600 * UNIT);
             vm.prank(settler);
-            try vault.emitPayment(wallet, x) {
+            try vault.onramp(keccak256(abi.encode("order", i)), wallet, x, 1) {
                 paid += x;
             } catch {}
             assertLe(paid, 1000 * UNIT);
@@ -239,11 +238,11 @@ contract ScanPayVaultFuzzTest is ScanPayVaultBase {
         dt = bound(dt, 0, 3 days);
         _fund(3000 * UNIT);
         vm.prank(settler);
-        vault.emitPayment(wallet, 1000 * UNIT);
+        vault.onramp(ID1, wallet, 1000 * UNIT, 1);
         vm.warp(T0 + dt);
         if (dt < 1 days) vm.expectRevert(abi.encodeWithSelector(ScanPayVault.DailyEmitCapExceeded.selector, 0, 1));
         vm.prank(settler);
-        vault.emitPayment(wallet, 1);
+        vault.onramp(ID2, wallet, 1, 1);
         if (dt >= 1 days) {
             assertEq(vault.emitWindowStart(), T0 + dt);
             assertEq(vault.emittedInWindow(), 1);
@@ -251,32 +250,73 @@ contract ScanPayVaultFuzzTest is ScanPayVaultBase {
     }
 
     // ------------------------------------------------------------ accounting
-    function testFuzz_SingleOfframpBalanceEqualsEscrowPlusPool(uint256 amount, uint256 poolFund, uint8 action) public {
+    function testFuzz_SingleOfframpBalanceEqualsEscrowHeldPool(uint256 amount, uint256 poolFund, uint8 action) public {
         amount = bound(amount, 1, 100 * UNIT);
         poolFund = bound(poolFund, 0, 500 * UNIT);
-        action = uint8(bound(action, 0, 4));
+        action = uint8(bound(action, 0, 5));
         if (poolFund > 0) _fund(poolFund);
         _lock(ID1, amount);
         _assertAccounting();
         skip(15);
         vm.startPrank(settler);
-        if (action == 1) vault.completeOfframp(ID1, REF);
+        if (action == 1 || action == 3 || action == 5) vault.completeOfframp(ID1, REF);
         if (action == 2) vault.refundOfframp(ID1, 1);
-        if (action == 3) {
-            vault.completeOfframp(ID1, REF);
-            vault.reverseOfframp(ID1);
-        }
+        if (action == 3) vault.reverseOfframp(ID1);
         vm.stopPrank();
         if (action == 4) {
             skip(24 hours);
             vm.prank(user);
             vault.reclaimOfframp(ID1);
         }
-        assertEq(_bal(address(vault)), vault.escrowedTotal() + vault.poolBalance());
-        uint256 expectEscrow = action == 0 ? amount : 0;
-        assertEq(vault.escrowedTotal(), expectEscrow);
-        assertEq(vault.poolBalance(), poolFund + (action == 1 ? amount : 0));
+        if (action == 5) {
+            vm.warp(_dl(ID1).releasableAt);
+            vault.releaseOfframp(ID1);
+        }
+        assertEq(_bal(address(vault)), vault.escrowedTotal() + vault.heldTotal() + vault.poolBalance());
+        assertEq(vault.escrowedTotal(), action == 0 ? amount : 0);
+        assertEq(vault.heldTotal(), action == 1 ? amount : 0);
+        assertEq(vault.poolBalance(), poolFund + (action == 5 ? amount : 0));
         assertEq(_bal(settler), 0);
         assertEq(_bal(relayer), 0);
+    }
+
+    // ------------------------------------------------------------ surplus
+    function testFuzz_SweepSurplusSendsExactlySurplus(uint256 donation, uint256 a1, uint256 a2, uint256 poolFund)
+        public
+    {
+        donation = bound(donation, 0, 1000 * UNIT);
+        a1 = bound(a1, 1, 100 * UNIT);
+        a2 = bound(a2, 1, 100 * UNIT);
+        poolFund = bound(poolFund, 0, 500 * UNIT);
+        if (poolFund > 0) _fund(poolFund);
+        _lockComplete(ID2, a2); // held
+        _lock(ID1, a1); // escrowed
+        if (donation > 0) {
+            vm.prank(funder);
+            token.transfer(address(vault), donation);
+        }
+        uint256 esc = vault.escrowedTotal();
+        uint256 held = vault.heldTotal();
+        uint256 pool = vault.poolBalance();
+        assertEq(_bal(address(vault)), esc + held + pool + donation);
+
+        address sink = makeAddr("sink");
+        if (donation > 0) {
+            vm.expectEmit(true, false, false, true, address(vault));
+            emit ScanPayVault.SurplusSwept(sink, donation);
+        }
+        vm.prank(owner);
+        vault.sweepSurplus(sink);
+
+        assertEq(_bal(sink), donation);
+        assertEq(vault.escrowedTotal(), esc);
+        assertEq(vault.heldTotal(), held);
+        assertEq(vault.poolBalance(), pool);
+        assertEq(_bal(address(vault)), esc + held + pool);
+        // a second sweep has nothing left to send
+        vm.prank(owner);
+        vault.sweepSurplus(sink);
+        assertEq(_bal(sink), donation);
+        assertEq(_bal(address(vault)), esc + held + pool);
     }
 }

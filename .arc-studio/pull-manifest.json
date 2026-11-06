@@ -6,8 +6,8 @@
       "pulledAt": "2026-11-06T06:20:04.293Z"
     },
     "contracts/README.md": {
-      "hash": "b98850529b405ac7ac561d6c2602b0f97f20e7b163f0ecdbfd81bb097bbf0fc4",
-      "pulledAt": "2026-11-06T06:20:04.294Z"
+      "hash": "edd56b3749e3442d9848b21a8becb9d5a3386aad303154ca6f3bf1b648a95943",
+      "pulledAt": "2026-11-06T09:11:34.817Z"
     },
     "contracts/foundry.toml": {
       "hash": "c276979f0d3d505e756a59001ed0ea73a23a69b5992b697fee736ff0d25b5f49",
@@ -18,76 +18,76 @@
       "pulledAt": "2026-11-06T06:20:04.295Z"
     },
     "contracts/script/Deploy.s.sol": {
-      "hash": "1b6e5c6281951b4cd7eb75776312b2b42a8a4e268e622a464b5c5d4079cda683",
-      "pulledAt": "2026-11-06T06:20:04.295Z"
+      "hash": "84511fca481f9de2ce101468fbf3b47631f676ba9b573bb8194d8cd09cb79ce3",
+      "pulledAt": "2026-11-06T09:11:34.817Z"
     },
     "contracts/script/DeployCreate2.s.sol": {
       "hash": "031692db152269016a8df83293d429f69f90dcb0e563ecc5366a257cbcf334a1",
       "pulledAt": "2026-11-06T06:20:04.295Z"
     },
     "contracts/src/ScanPayVault.sol": {
-      "hash": "a44ae011834deb92be0fa52ebb25a1dcec561c3c128f085c5ad051714b170142",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "095cbf9b32ff1a0864af7ba9ad5c93b4f7e71fde92afd2238ac7d5e1e119b49d",
+      "pulledAt": "2026-11-06T09:11:34.817Z"
     },
     "contracts/test/.gitkeep": {
       "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "pulledAt": "2026-11-06T06:20:04.296Z"
     },
     "contracts/test/ScanPayVault.Admin.t.sol": {
-      "hash": "c75d43c77197020a4660c46f592ad91b2f264f49198a30fb1131313ce1d944d5",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "730b6ea256c5a04b6b54979eb3728499e0b171067a28ccc612ab78489c42b452",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
     },
     "contracts/test/ScanPayVault.Lifecycle.t.sol": {
-      "hash": "e45d9b83ed250d8b4fad454e71ccdb8b40e5da3b22beda47f63740fa188522de",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "fb235fded23b9874276b435b4fca7379c04e9df42c1a15d92fae91fb2f0f9bd6",
+      "pulledAt": "2026-11-06T08:52:51.890Z"
     },
     "contracts/test/ScanPayVault.Payout.t.sol": {
-      "hash": "fff1c828dbf21b26126c13961dbb3e99a93e0181cf79482c3aaa4babaa5f68cf",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "892382e2cb83faaa11a2d6fe0e0b13b6c0c1572f64c8269e02d11086c9a1fd58",
+      "pulledAt": "2026-11-06T08:52:51.890Z"
     },
     "contracts/test/ScanPayVault.t.sol": {
-      "hash": "943964d9d683afc68c00dd1d9e194f3c4a735213a187359204459f73071dd8cc",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "17f3b397a0ce7a4323cee79216e6ed1f982d7d484f6f976ad91a26f2f15e6466",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
     },
     "contracts/test/ScanPayVaultBase.t.sol": {
-      "hash": "95de3629a68ca3839c45c4501782ff9f4941677c329f7ae59213d50729b03781",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "34f9cdc3fd396a673a6b0b95eaa7f56d63c8cdf8c8ee753c274745d5c934be26",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
     },
     "contracts/test/ScanPayVaultFuzz.t.sol": {
-      "hash": "3ea2453d3e29043bec708ec2678250582ce962ede0627b1c8bb056c1c344bdea",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "5e8020e3f9c0af22aa06671f270e99a2806dd7de4586c054342c3f29c582bd1c",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
     },
     "contracts/test/ScanPayVaultPermit.t.sol": {
-      "hash": "c7f0bf6e469bfe47f72f06dd8ea090b56f46dffeb45014371ded6d65f84e7e90",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "ac2546ff9b1273ba8b8073500483e06f87897dd308f15df9ea98db906da1cdf2",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
     },
     "contracts/test/fork/ArcNativeCoinEmulator.sol": {
       "hash": "1b0f5dc4210ada38fa2f7683925c642f442dd865245ed28c07912a285267e1fe",
       "pulledAt": "2026-11-06T06:20:04.296Z"
     },
     "contracts/test/fork/ForkArc.t.sol": {
-      "hash": "da1c25c0aaf5392f300ec3d5733b17512a6430371b3cb55bb9526e16b58bd726",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "85aa56e1b32d6633e597ed0efe52810d8b8b100c101d7c3f58a4470e98b98753",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
     },
     "contracts/test/fork/ForkBase.t.sol": {
-      "hash": "3461b6d32bc4ce7e412a0ccad5be55d73de5960582dea6bc37a736e8f7a55db2",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "2398d8fb16f41d26a0b9152155e859b5e47af481e39af4b423055049925dead1",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
     },
     "contracts/test/fork/ForkWhitechain.t.sol": {
       "hash": "38b12e2bd0d333641b3272bcd026a644675ed3e8e30b93cd21818b9c11fe3ce2",
       "pulledAt": "2026-11-06T06:20:04.296Z"
     },
     "contracts/test/helpers/SigHelpers.sol": {
-      "hash": "b626cd1ca04c05a16f92aa7e843e363a77ec65a388d9a4e9d844182e0c823822",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "ee00556076e34dbc75194cf5c40dc664484bdf72af57fa0db03466d4626c36e8",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
     },
     "contracts/test/invariant/Handler.sol": {
-      "hash": "583622d206f836b5a61a0e6e95aa5d1f95311f34bad22167fa3b0521a424ced8",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "d4588df2b1772dd3b3688830b6254c53fb0908e679078650f467f66ea9b7a533",
+      "pulledAt": "2026-11-06T09:11:34.819Z"
     },
     "contracts/test/invariant/ScanPayVaultInvariant.t.sol": {
-      "hash": "95418e0de743df539994c9a46a518e24505ce2c7cc15d8eb4d880a6c685a49ab",
-      "pulledAt": "2026-11-06T06:20:04.296Z"
+      "hash": "9dbc25be9495b21cbba26e1f54059843b5d3d920b882645edd26663004d939af",
+      "pulledAt": "2026-11-06T09:11:34.819Z"
     },
     "contracts/test/mocks/MockBlocklistToken.sol": {
       "hash": "a7c895ce939a91e1c01226f40c0d61f3a5f7ca076ec9f788bb0ccc153a1c458b",
@@ -104,6 +104,62 @@
     "contracts/test/mocks/MockPermitToken.sol": {
       "hash": "ba7a96536d132caa1e209142d8b825c9aed42c61b9b3d2a6c8b598944fb77c04",
       "pulledAt": "2026-11-06T06:20:04.297Z"
+    },
+    "contracts/test/ScanPayVault.Dispute.t.sol": {
+      "hash": "65cabe234b826e3b8604ac7c19f7495a5920b06c79f8affee7d85fa8e00a1afb",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
+    },
+    "contracts/test/ScanPayVault.Quote.t.sol": {
+      "hash": "2351c8b6f83c30e7a5e0f36601f9b584aa54d456ff162e26016fbb03d6b5a34e",
+      "pulledAt": "2026-11-06T08:52:51.890Z"
+    },
+    "contracts/test/ScanPayVault.Reclaim.t.sol": {
+      "hash": "a61498746e5667bfbcb0535a980c9762736309512b0e5ac76594b3c7b8c7cd7a",
+      "pulledAt": "2026-11-06T08:52:51.890Z"
+    },
+    "contracts/test/ScanPayVault.Roles.t.sol": {
+      "hash": "5ba8365cb3b7ba685dc47eb00b3bcecc03466845b0d65e751fad7f8f1641a88b",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
+    },
+    "contracts/test/ScanPayVaultFuzz.Quote.t.sol": {
+      "hash": "a72c7097c794d26837153d006e52c7a494c9cda5a0f8bfdd2b9814430dfb8e3f",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
+    },
+    "contracts/test/ScanPayVaultFuzzBase.t.sol": {
+      "hash": "d0d813744355783d77702fb4db48c40803bf8b6b4464ef8f184431b0a7684bdd",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
+    },
+    "contracts/test/ScanPayVaultPermit.Wallet.t.sol": {
+      "hash": "5eb4e6eb715705700829f5c0d84da6451eb0b69133062ca09295583447a37cbe",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
+    },
+    "contracts/test/ScanPayVaultPermitBase.t.sol": {
+      "hash": "e84b616722a17e21019ad990bc76e2b3bddba201747c951934972a21ea0ad649",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
+    },
+    "contracts/test/ScanPayVaultUnitBase.t.sol": {
+      "hash": "a721f521148b0564d7d1dd927978554460d2ba8ba50cc461f250af7e3f96d0ab",
+      "pulledAt": "2026-11-06T08:52:51.891Z"
+    },
+    "contracts/test/mocks/MockERC1271Wallet.sol": {
+      "hash": "a824192ff9fef49644ebe98ffc0ce8770c271588dc8800f6fdb1b9de0681d9dc",
+      "pulledAt": "2026-11-06T08:52:51.892Z"
+    },
+    "contracts/test/ScanPayVault.DisputeTimeout.Config.t.sol": {
+      "hash": "96983b2ae91d7a7c47d6b40a53ff3ec6c6b87b2bb88dc1ceae38bfa9714722d3",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
+    },
+    "contracts/test/ScanPayVault.DisputeTimeout.Fuzz.t.sol": {
+      "hash": "3bed55674764eb95889dd2c58c39e5061e738ccc261a4e6df3e3362086e2309e",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
+    },
+    "contracts/test/ScanPayVault.DisputeTimeout.t.sol": {
+      "hash": "0a0179d854dbe79d34f81aa4e112eda7d832eda7cca610184360d9ed9ac02a5e",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
+    },
+    "contracts/test/ScanPayVaultDisputeTimeoutBase.t.sol": {
+      "hash": "9c0a99782abd0f2ff95cc3550c6c817cd441473bb2398d3ab4e4bfd58551ca43",
+      "pulledAt": "2026-11-06T09:11:34.818Z"
     }
   }
 }

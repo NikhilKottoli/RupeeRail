@@ -20,6 +20,20 @@ abstract contract SigHelpers is Test {
         return abi.encodePacked(r, s, vv);
     }
 
+    /// @dev The quote signer signs the SAME digest as the user (hashIntent).
+    function _signQuote(ScanPayVault v, uint256 quotePk, ScanPayVault.OfframpIntent memory it)
+        internal
+        view
+        returns (bytes memory)
+    {
+        return _signIntent(v, quotePk, it);
+    }
+
+    /// @dev Off-chain commitment: keccak256(abi.encode(salt, qrText)).
+    function _commit(bytes32 salt, string memory qrText) internal pure returns (bytes32) {
+        return keccak256(abi.encode(salt, qrText));
+    }
+
     function _permitDigest(address t, address o, address spender, uint256 value, uint256 deadline)
         internal
         view
