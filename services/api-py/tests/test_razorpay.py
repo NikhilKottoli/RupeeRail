@@ -162,7 +162,7 @@ def test_create_returns_a_checkout_link(renv):
     assert o["status"] == "AWAITING_FIAT" and o["payTo"] is None
     assert o["checkout"]["provider"] == "razorpay" and o["checkout"]["url"].startswith("https://rzp.io/")
     kw = rz.created[0]
-    assert kw["amount_paise"] == 1000 and kw["reference_id"] == o["orderId"][2:42]
+    assert kw["amount_paise"] == 1000 and kw["reference_id"] == o["orderId"][2:42] and kw["description"] == "RupeeRail"
     assert kw["callback_url"] == BASE + "/onramp/razorpay/callback" and kw["notes"]["orderId"] == o["orderId"]
     assert client.get(f"/onramp/{o['orderId']}").json()["checkout"] == o["checkout"]
 
