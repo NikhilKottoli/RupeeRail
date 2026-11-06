@@ -3,7 +3,7 @@
   "chainId": 5042002,
   "rpc": "https://rpc.testnet.arc.io",
   "explorer": "https://explorer.testnet.arc.io",
-  "vault": "0x1203a10706290d5a3c62bd99d10186d909e89e39",
+  "vault": "0xef2b4bfdf555f38fe2579e1e283f0d551175bd2b",
   "token": {
     "symbol": "USDC",
     "address": "0x3600000000000000000000000000000000000000",
@@ -13,11 +13,29 @@
       "version": "2"
     }
   },
-  "owner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
-  "settler": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
-  "paymaster": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
-  "deployTx": "0x17ae5edd3925d55ee1661aca01e6ef7d7399361a1143c9173ff772c5388ba26f",
-  "deployedBy": "Arc Studio (ERC-4337 handleOps from platform account 0xB029E8EAee8F51c8B6feB933832F8052a6c9Dc4b)",
+  "roles": {
+    "owner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "settler": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "quoteSigner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "paymaster": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "arbiter": "0x9AB6Ef8D1fE7841DaD1Ab278248c46286AA8eEe9",
+    "guardian": "0x0000000000000000000000000000000000000000"
+  },
+  "config": {
+    "completeDelaySec": 15,
+    "disputeWindowSec": 86400,
+    "reclaimDelaySec": 86400,
+    "disputeTimeoutSec": 604800,
+    "maxOfframpAmount": "100000000",
+    "dailyEmitCap": "1000000000"
+  },
+  "contractCommit": "1b82e62",
+  "deployTx": "0xb015f9b935604bbfeea68961835481b2afdebbdf27132411b9f1d396bd6750f4",
+  "deployedBy": "Arc Studio (ERC-4337 handleOps from platform account 0xDEa3556040658885B0Ac5Bb930F0B7e2f52DBFBC; no role in the vault)",
   "verified": true,
-  "bytecodeCheck": "executable code identical to local build; constructor args verified; only CBOR metadata differs"
+  "previous": {
+    "vault": "0x1203a10706290d5a3c62bd99d10186d909e89e39",
+    "note": "old API (string qrText, no quoteSig); superseded, pool 0",
+    "smokeLog": "deployments/arc.smoke.log"
+  }
 }

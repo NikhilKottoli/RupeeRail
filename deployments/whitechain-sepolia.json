@@ -3,7 +3,7 @@
   "chainId": 1874,
   "rpc": "https://rpc.testnet.whitechain.io",
   "explorer": "https://explorer.testnet.whitechain.io",
-  "vault": "0x6f89445d0CD31C26D091Bc47F6C5566E1fBF5982",
+  "vault": "0xfe050924c876161cf876c7e5697d8eefd1539d63",
   "token": {
     "symbol": "USDT",
     "address": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
@@ -13,10 +13,29 @@
       "version": "1"
     }
   },
-  "owner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
-  "settler": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
-  "paymaster": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
-  "deployTx": "0x4938d7220534c460325d6ed8fc55a52371a8c1ea167bd294392cc1e5f424b289",
-  "deployedBy": "Claude Code (forge script, wallet index 0)",
-  "verified": true
+  "roles": {
+    "owner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "settler": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "quoteSigner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "paymaster": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+    "arbiter": "0x9AB6Ef8D1fE7841DaD1Ab278248c46286AA8eEe9",
+    "guardian": "0x0000000000000000000000000000000000000000"
+  },
+  "config": {
+    "completeDelaySec": 15,
+    "disputeWindowSec": 86400,
+    "reclaimDelaySec": 86400,
+    "disputeTimeoutSec": 604800,
+    "maxOfframpAmount": "100000000",
+    "dailyEmitCap": "1000000000"
+  },
+  "contractCommit": "1b82e62",
+  "deployTx": "0x1467238ee4376d5e1e45b3e3a31c14bef4a550bbaa5aae5eb544f92d0bdb097f",
+  "deployedBy": "Claude Code (viem deployContract with the Foundry-compiled bytecode, from the owner key)",
+  "verified": true,
+  "previous": {
+    "vault": "0x6f89445d0CD31C26D091Bc47F6C5566E1fBF5982",
+    "note": "old API (string qrText, no quoteSig); superseded, pool 0",
+    "smokeLog": "deployments/whitechain.smoke.log"
+  }
 }
