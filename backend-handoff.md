@@ -126,7 +126,7 @@ public:  QUOTED -> SUBMITTED -> LOCKED -> COMPLETED -> RELEASED
   caller passes the `viewToken` from `/quote` (as the `?viewToken=` query parameter or the `x-view-token`
   header).
 - `EXPOSE_PAYEE_BY_ID=1` restores the literal v1 behaviour, which leaks merchant UPI IDs to anyone who reads the chain.
-- `qrText` and `salt` are never returned by any route.
+- `salt` is never returned by any route. `qrText` is returned by `GET /offramp/{id}` only to a viewToken holder, so a merchant's `tr`, `mc` and `sign` fields reach the phone.
 - With `VIEW_TOKEN_SECRET` set, each viewToken is `HMAC-SHA256(secret, id)`, so `apps/upi-payer` can compute it from
   the id in `OfframpLocked` and read the payee. A leaked secret exposes every payee quoted while it was set.
 

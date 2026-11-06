@@ -1,6 +1,6 @@
 # Verify log
 
-Answers to the plan's VERIFY list (`README-agents.md`, section 11). Started 2026-11-06.
+Answers to the plan's open questions (`README-agents.md`, section 11). Started 2026-11-06.
 
 | # | Question | Status | Answer |
 |---|---|---|---|
@@ -8,7 +8,6 @@ Answers to the plan's VERIFY list (`README-agents.md`, section 11). Started 2026
 | 2 | Circle `--chain` for Arc testnet? | **Yes, tested** | `ARC-TESTNET` works for typed-data signing. |
 | 2 | Are Circle signatures ECDSA-verifiable? | **No, tested** | It's a smart account. Signatures verify through ERC-1271 only. See below. |
 | 2b | Does the backend support Arc? | **Yes, tested** | Live payments reached `COMPLETED`: [lock](https://explorer.testnet.arc.io/tx/0x39ce2c0deddafc11408cfcb41e427a0606ee5998c139d0ebc11ad893372b3060), [browser-signed lock](https://explorer.testnet.arc.io/tx/0xd8f08ae50152e8676f35ad6704a01a7816015ddf13b3c459a6070bebd0fd5258). |
-| 3 | Jev endpoint, limits, confidence? | **Docs only** | See below. Latency needs a key. |
 | 4 | Backend "section 5" rules? | **Open** | The document isn't in this repo. See `backend-notes.md`. |
 | 5 | Quote and permit expiry? | **Yes, from code** | Both are 90 seconds. |
 | 6 | Does `.click()` work on Swiggy? | **Deferred** | Only needed for the Swiggy stretch goal. |
@@ -18,7 +17,6 @@ Answers to the plan's VERIFY list (`README-agents.md`, section 11). Started 2026
 
 - **0a, Swiggy:** deferred, by decision.
 - **0b, Circle signing:** done with CLI 1.2.3. See below.
-- **0c, Jev:** read the docs, but no call made because there's no key yet.
 - **0d, off-ramp on Arc:** done through the Circle wallet, with the payer temporarily allowlisted. See below.
 
 ## Circle wallet
@@ -47,16 +45,6 @@ Agent wallet on Arc testnet: `0x179dfbc07b23541849a2cb6d38d991d9ec7cda88`.
 **Tested end to end on 2026-11-06.** The agent read `upi.png` from a screenshot of the mock store, took the ₹1 total from the page, and paid from the Circle wallet with the invalid permit: [lock](https://explorer.testnet.arc.io/tx/0x5686e0c2edc313b89e9fac8caac7055e913c5ad7a9343ee2091b7b5363b9433f). The allowance fell by the token amount, so the permit was ignored as intended, and the phone paid ₹1 to the QR's payee.
 
 An earlier attempt, offramp `0x4cb63e99…`, reached `COMPLETED` on-chain, but the phone didn't pay because the notification panel was covering Google Pay. That was fixed in `go_home`. It's also a real example of the parked gap: the chain said `COMPLETED` while the merchant got nothing.
-
-## Jev
-
-From docs.typesafe.ai:
-
-- `POST https://api.typesafe.ai/v1/systemone` with `Authorization: Bearer <key>`.
-- Body: `{model, state, questions}`. A `choice` question takes `criteria` with 1 to 255 options.
-- A choice answer returns `choice`, `confidence` from 0 to 1, and `probabilities`.
-- `GET /v1/models` lists available models. `jev-latest` is the documented model.
-- Images need the `TypeSafe-Danger-Zone-Images: true` header and a vision-capable model. The plan's DOM-first approach still fits.
 
 ## Arkiv
 

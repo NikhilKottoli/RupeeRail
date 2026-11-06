@@ -1,382 +1,356 @@
-# Plan: Agentic checkout demo ("tell it what to buy, it buys it and pays from a wallet")
+# Plan: Agentic checkout
 
-Hackathon demo, Circle is a sponsor. Live demo on real Swiggy, with a Playwright script as fallback.
+Tell an agent what to buy. It shops in your own browser tab, reads the UPI QR at checkout, pays from its Circle wallet on Arc, and reports whether the merchant was really paid.
 
----
+**Pitch: "Autonomous, but bounded."** The agent pays with no human step, but it can't spend beyond an on-chain allowance, and no model can move money.
 
-## 0. Instructions for the coding agent (read first)
+**Status: final, agreed 2026-11-06.** Progress is tracked in `docs/status.md`. Test results are in `docs/verify-log.md`.
 
-1. **Explore the existing off-ramp backend before writing anything.**
-   - Find its repo or API docs and list every endpoint (method, path, request/response schema, auth, error codes).
-   - Known endpoints (from the owner, verify against code):
-     - `POST {BASE}/quote` `{chain, user, inr, qrText}` returns `{id, intent, quoteSig, payee, display, signing{permit,intent}}`
-     - `POST {BASE}/offramp` `{chain, intent, userSig, permit{deadline,v,r,s}}` returns `{id, txHash, status:"SUBMITTED"}`
-     - `GET {BASE}/offramp/{id}` poll until `COMPLETED` then `RELEASED`, or `REFUNDED` / `REVERSED`
-   - **Chain change:** the backend was first set up on Whitechain testnet. The target chain is now **Arc testnet**. Check whether the `chain` field accepts Arc, which chain ID and token/permit contract it uses, and whether anything is hardcoded to Whitechain. Record this in `docs/backend-notes.md`. If the backend needs changes to support Arc, list them for the owner instead of editing existing endpoints.
-   - The backend docs mention a "section 5" that says how to verify a quote locally (payee, amount, domains). Find it and implement exactly what it says in `verify.py`.
-   - Note the quote expiry and permit `deadline` (owner thinks 5 to 10 minutes).
-   - Write findings to `docs/backend-notes.md`.
-2. **Do not change existing endpoints.** Add new endpoints or modules only where this plan says so. If the existing backend is Python and has a natural place for the agent server, say so in `docs/backend-notes.md` and put the agent server there. Otherwise create a new Python service.
-3. Anything marked **VERIFY** is an assumption. Test it early (see section 10, Milestone 0) and record the result in `docs/verify-log.md`.
-4. Keep everything behind small interfaces (`Decider`, `Signer`, `Executor`) so that fallbacks can be swapped in without rewrites.
-5. Prefer boring and working over clever. This is a demo.
+**Prizes:**
+
+- **Arc, Best Smart Contracts with Advanced Stablecoin Logic.** `ScanPayVault` is conditional escrow built in Arc Studio, paid by an agent.
+- **Arkiv, Build on Arkiv (from scratch).** The payout board.
 
 ---
 
-## 1. Goal and demo story
+## 1. Demo story
 
-User types one goal in the extension, for example: _"Order a paneer butter masala under ₹300 on Swiggy."_
+The user types: _"Order a cutting chai."_
 
-1. The agent wallet is **pre-funded** (Circle Agent Wallet on Arc testnet). There is no funding step in the demo.
-2. Agent drives the user's own logged-in browser tab: search, pick item, add to cart, proceed to payment.
-3. At the payment step the agent gets a UPI QR, decodes it, and asks the off-ramp backend for a quote.
-4. Code (not the LLM) verifies the quote, the wallet signs two EIP-712 messages, the backend pays the UPI payee.
-5. Agent polls until the payment is `COMPLETED` / `RELEASED`, then fires a callback.
+1. The Circle wallet on Arc testnet is already funded and has approved the vault up to a cap.
+2. The agent drives the user's own tab on the mock store: search, add to cart, proceed to payment.
+3. At the payment page, it reads the QR from a screenshot and the total from the page.
+4. Code verifies the quote, the wallet signs, and the backend locks the funds in escrow.
+5. The phone payer pays the merchant from UPI Lite.
+6. The agent reads the payer's result, then shows and sends the outcome.
 
-Pitch line: **"Autonomous, but bounded."** The wallet has spending limits and a merchant allowlist; the LLM can never move money on its own.
+The mock store is a normal checkout that knows nothing about the agent, and its static QR has no amount, as on many real sites. Real sites such as Amazon are a stretch goal (section 9).
 
 ---
 
-## 2. Decisions already made
+## 2. Decisions
 
-| Topic         | Decision                                                                                    |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| Client        | Chrome extension (Manifest V3, TypeScript), runs in the user's own logged-in browser        |
-| Backend       | Python (FastAPI) agent server, plus the already-built off-ramp backend                      |
-| Orchestration | LangGraph (a state machine, not a linear chain)                                             |
-| Site          | Real Swiggy, user already logged in with an address saved                                   |
-| User input    | Specific text goal                                                                          |
-| Models        | Jev (TypeSafe AI) first, OpenAI as fallback and for free-text                               |
-| Payment       | Via the existing off-ramp endpoints; wallet signs; backend status is the source of truth    |
-| Chain         | **Arc testnet** (Circle-supported). Replaces Whitechain.                                    |
-| Funding       | Agent wallet is pre-funded before the demo. No funding or onramp flow to build.             |
-| Out of scope  | Refund/reversal handling, login/OTP automation, multi-site generality beyond a mocked claim |
+| Topic | Decision |
+|---|---|
+| Autonomy | **Fully autonomous** under the limits. No confirmation before paying. The kill switch works until submission |
+| Client | Chrome extension (Manifest V3, TypeScript) in the user's logged-in browser |
+| Agent server | Python and FastAPI, in `agent-server/`, on the same laptop as the extension |
+| Orchestration | **A plain state machine** in Python |
+| Model | **OpenAI**, with vision. Behind a `Decider` interface |
+| Without a key | A rule-based decider, for tests and the mock store. It's labelled as not AI |
+| Payment | The existing off-ramp endpoints, which aren't changed |
+| Wallet | Circle agent wallet, on `ARC-TESTNET`, `0x179dfbc07b23541849a2cb6d38d991d9ec7cda88` |
+| Chain | Arc testnet |
+| Success | **The payer's result, not on-chain `COMPLETED`** |
+| Demo site | Mock store first |
+| Payee in tests | `apps/mock-store/upi.png` |
+| Order-placing clicks | **Pause for a person.** "Place order", "Buy now" and similar could spend through a saved card or cash on delivery, outside every limit |
+| Out of scope | Funding flows, login and OTP automation, CAPTCHA solving, multi-user accounts |
 
 ---
 
 ## 3. Architecture
 
 ```
-┌────────────────────────── Chrome (user's own session) ───────────────────────────┐
-│  Swiggy tab                                                                       │
-│   ▲  content script: DOM snapshot → candidate actions; executes click/type/scroll │
-│   │                                                                               │
-│  Service worker: screenshot (captureVisibleTab), relay, tab control               │
-│  Side panel: goal input, live step log, wallet balance, status, kill switch       │
-└───────────────▲───────────────────────────────────────────────┬──────────────────┘
-                │ observation (candidates + screenshot)         │ action
-                │                                               ▼
-        ┌───────┴────────────────── Agent server (Python, FastAPI + LangGraph) ──────┐
-        │  graph: observe → decide → act → progress-check → … → checkout → pay      │
-        │  Decider: Jev (choice over candidates)  |  OpenAI (vision / free text)     │
-        │  QR decode (screenshot → upi:// string)                                    │
-        │  verify.py  (code-enforced guardrails, no LLM)                             │
-        │  Signer: Circle CLI subprocess  |  local-key fallback                      │
-        │  status poller + callback dispatcher                                       │
-        └───────────────┬──────────────────────────────────────┬────────────────────┘
-                        │ quote / offramp / poll               │ sign typed-data
-                        ▼                                      ▼
-              Existing off-ramp backend                 Circle Agent Wallet (CLI)
-              ({BASE}, Arc testnet)
+┌───────────────────────── Chrome (the user's own session) ─────────────────────────┐
+│  Store tab: content script reads the page and clicks, types and scrolls            │
+│  Service worker: screenshots, relays messages, enforces allowed domains            │
+│  Side panel: goal, live step log, wallet balance, status, kill switch              │
+└───────────────▲──────────────────────────────────────────────┬─────────────────────┘
+                │ observation                                  │ action
+        ┌───────┴───────────── agent-server (localhost) ───────▼──────┐
+        │  State machine: observe → decide → act → ... → pay          │
+        │  Decider: OpenAI, or rule-based                             │
+        │  verify.py: code-enforced checks, no model involved         │
+        │  Signer: Circle CLI                                         │
+        │  Payout results: reads the payer's outcome                  │
+        └──────┬───────────────────┬──────────────────────┬───────────┘
+    quote, pay │       typed data  │       payer's result │
+               ▼                   ▼                      ▼
+     Off-ramp backend      Circle agent wallet       apps/upi-payer ──adb──> Phone
+               │                                          ▲
+               ▼                                          │ polls /events
+        ScanPayVault on Arc ──── OfframpLocked ───────────┘
 ```
 
-Why this split: the extension is the "hands" (sees and touches the page), the agent server is the "brain" (decides, holds secrets, talks to model APIs and the wallet), and the wallet/off-ramp is a separate security boundary. API keys and signing never live in the extension.
+The extension is the hands, the server is the brain, and the wallet and off-ramp are a separate security boundary. Keys and signing never live in the extension.
 
 ---
 
 ## 4. Components
 
-### 4.1 Chrome extension (TypeScript, MV3)
+### 4.1 Chrome extension (`extension/`)
 
 **Content script**
 
-- Build a **candidate action list** from the DOM: visible, interactive elements (links, buttons, inputs, elements with click handlers or ARIA roles).
-- Assign each a stable per-snapshot id (e.g. `data-agent-id="a17"`).
-- Each candidate: `{id, role, text, ariaLabel, placeholder, href?, bbox, inViewport}`.
-- Cap the list (about 40 to 60 items, nearest the viewport first) to keep decisions fast.
-- Also extract short page text for context (headings, price lines, cart total if visible).
-- Execute actions: `click(id)`, `type(id, text)`, `scroll(dir)`, `key(name)`, `wait(ms)`.
-  - For `type`, use the native value setter and dispatch `input` and `change` events so React-style apps notice.
-  - If plain `.click()` is ignored by the site, fall back to dispatching real mouse events. **VERIFY** on Swiggy. As a last resort use `chrome.debugger` (trusted events, but it shows a yellow banner).
+- Lists up to 60 visible interactive elements, nearest the viewport first, each with a per-snapshot id: `{id, role, text, ariaLabel, placeholder, value, href, bbox, inViewport}`.
+- Skips password fields, and sends short page text for context.
+- Scrolls a likely QR image into view when the page mentions UPI, so the screenshot contains it.
+- Actions: `click`, `type`, `scroll`, `key`, `wait`. Typing uses the native value setter and dispatches `input` and `change` events, and clicks dispatch real mouse events.
 
 **Service worker**
 
-- `chrome.tabs.captureVisibleTab` for screenshots (JPEG, downscaled).
-- Maintains a WebSocket to the agent server. Relays observations up and actions down.
-- Enforces: only operate on allowlisted origins (see section 7).
+- Takes screenshots with `chrome.tabs.captureVisibleTab`.
+- Keeps a WebSocket open to the server, with a ping every 20 seconds so Chrome doesn't shut the worker down.
+- Stays on the tab the session started in, and refuses to act on any origin outside `allowed_domains`.
 
-**Side panel UI**
+**Side panel**
 
-- Goal input, start/stop (kill switch always visible), step-by-step log with the last screenshot, wallet address and balance, payment status.
+- Goal input, start and stop, and a kill switch that's always visible.
+- A step log with the last screenshot, wallet address and balance, and payment status.
+- It reports the payer's actual result (section 4.5).
 
-### 4.2 Agent server (Python, FastAPI + LangGraph)
+### 4.2 Agent server (`agent-server/`)
 
-New endpoints on the agent server (the off-ramp backend is untouched):
+| Endpoint | Purpose |
+|---|---|
+| `POST /sessions` | Start: `{goal, max_inr, allowed_domains?}` returns `{session_id, allowed_domains}` |
+| `WS /sessions/{id}` | Observations in, actions and events out |
+| `POST /sessions/{id}/stop` | Kill switch |
+| `GET /sessions/{id}` | State and history |
+| `GET /wallet` | Address, balance and remaining allowance |
+| `POST /webhooks/test` | Demo receiver for the callback |
 
-- `POST /sessions` start a session `{goal, constraints{max_inr, allowed_domains}}` returns `{session_id}`
-- `WS /sessions/{id}` bidirectional channel: observations in, actions out, events out
-- `POST /sessions/{id}/stop` kill switch
-- `GET /sessions/{id}` current state and history
-- `POST /webhooks/test` demo receiver for the final callback (optional)
-- `GET /wallet` address and balance (via the signer)
+It binds to `127.0.0.1` and rejects browser requests whose `Origin` isn't the extension. Otherwise any website the user visits could connect to the WebSocket and drive a server that can spend money.
 
-### 4.3 Decider (model layer)
-
-Interface:
+### 4.3 Decider
 
 ```python
 class Decider(Protocol):
-    def choose_action(self, state_text: str, candidates: list[Candidate],
-                      screenshot: bytes | None) -> Action: ...
+    def choose_action(self, state_text: str, candidates: list[Candidate], screenshot: bytes | None) -> Action: ...
     def write_text(self, instruction: str, context: str) -> str: ...
 ```
 
-**Primary: Jev (TypeSafe AI).** From public docs and community pages (**VERIFY against docs.typesafe.ai/api**):
-
-- Jev is a "System One" model that returns **typed decisions** (a choice, a score, a yes/no probability) rather than free text. It is called via its own evaluate endpoint, with a `state` string and `questions` containing `choice` options with per-option criteria. It is fast and cheap.
-- Natural fit: put the page summary and goal in `state`, and make each candidate action a choice option. Jev returns which one to take.
-- A community project ("Jev Ultrafast") reportedly does exactly this for browser control, calling a text model only when text must be typed.
-- Vision (image input, bounding boxes) was reported as an experimental opt-in in Jev 1.14, so treat Jev as **DOM-first** and don't depend on its vision for the demo.
-
-**Fallback and free-text: OpenAI vision model.**
-
-- Used when (a) Jev's confidence is low, (b) no candidate fits, (c) the page is a canvas or image-heavy, or (d) text must be written (e.g. a search query).
-- Sends screenshot plus candidate list, returns the same `Action` schema.
-
-Routing rule: try Jev. If confidence is below a threshold or the same state repeats twice, escalate to OpenAI with the screenshot. Log which model decided each step (nice for the demo).
-
-`Action` schema:
+- **`OpenAIDecider`:** sends the state, the candidate list and a screenshot, and gets back an `Action` through a JSON schema. The model comes from `OPENAI_MODEL`.
+- **`RuleDecider`:** matches the goal against labels such as "Add", "Cart" and "Proceed". It lets the whole loop run without a key, and the log says it isn't AI.
 
 ```json
-{
-  "type": "click|type|scroll|key|wait|done|need_help|checkout_reached",
-  "target": "a17",
-  "text": "paneer butter masala",
-  "reason": "short string"
-}
+{ "type": "click|type|scroll|key|wait|done|need_help|checkout_reached", "target": "a17", "text": "cutting chai", "reason": "short string" }
 ```
 
-### 4.4 Payment module
+Each step logs which decider chose it.
 
-Triggered when the graph reaches `checkout_reached` and a QR is visible.
+### 4.4 Payment module (`agent-server/app/payment/`, already built)
 
-1. **Get `qrText`.**
-   - First check the DOM for a `upi://` link or string (cheap, exact).
-   - Else decode the QR from the latest screenshot (OpenCV `QRCodeDetector` or `pyzbar`). Retry with a fresh screenshot a few times; QR may load late.
-2. **Get the amount to pay** from the cart/checkout total on the page (via the decider) and from the UPI string's `am=` parameter. They must agree.
-3. `POST {BASE}/quote` with `{chain, user, inr, qrText}`. Request this only when the QR is on screen and everything else is ready, to avoid expiry.
-4. **Verify** (section 7). Abort on any failure.
-5. **Sign** `signing.permit` and `signing.intent` (EIP-712) via the Signer. Split the permit signature into `v, r, s`.
-6. `POST {BASE}/offramp` with `{chain, intent, userSig, permit{deadline,v,r,s}}`.
-7. Poll `GET {BASE}/offramp/{id}` every 2 to 3 s with a timeout (shorter than the quote expiry). `COMPLETED` then `RELEASED` means success. `REFUNDED` / `REVERSED` means fail, show it, and stop (no retry in the demo).
-8. Fire the callback (4.6).
+1. Reads the QR from the page: an exact `upi://` link first, otherwise the screenshot.
+2. Reads the total from the page. If the QR has `am=`, the two must agree.
+3. Checks the origin and limits, then requests a quote. **Quotes last 90 seconds**, so this comes last.
+4. Runs `verify.py`, and aborts on any failure.
+5. Signs the intent through the Circle CLI.
+6. Sends a deliberately invalid permit with `POST /offramp`, so the vault pays from the allowance. A valid permit would reset the allowance to a single payment. See `docs/verify-log.md`.
+7. Polls `GET /offramp/{id}`.
 
-### 4.5 Wallet signer
+### 4.5 Payer's result
 
-Interface:
+On-chain `COMPLETED` isn't proof of payment. The backend completes about 15 seconds after the lock, whether or not the phone paid.
+
+So the agent waits for the payer's own record of that offramp, behind an interface:
+
+```python
+class PayoutResults(Protocol):
+    def result(self, offramp_id: str) -> Literal["paid", "failed", "unknown", "dry_run"] | None: ...
+```
+
+- **First implementation:** reads the payer's ledger, `apps/upi-payer/data/payer.sqlite`, read-only, since both run on the same laptop.
+- **After Milestone 5:** reads the `rupeerail.receipt` entity from Arkiv, and the agent no longer needs to share a machine with the payer.
+
+| Payer's result | Agent reports |
+|---|---|
+| `paid` | **PAID** |
+| `failed` | **NOT PAID**, and that the funds can be disputed |
+| `unknown` | **CHECK THE PHONE** |
+| `dry_run` | **DRY RUN**, no rupees moved |
+| None after 2 minutes | **NO RESULT**, the payer may be offline |
+| On-chain `REFUNDED` or `REVERSED` | **NOT PAID**, funds returned |
+
+### 4.6 Wallet signer (already built)
 
 ```python
 class Signer(Protocol):
+    uses_allowance: bool
     def address(self) -> str: ...
-    def sign_typed_data(self, typed_data: dict) -> str: ...  # returns 0x signature
+    def sign_typed_data(self, typed_data: dict) -> str: ...
 ```
 
-**Primary: Circle Agent Wallet via Circle CLI**, called as a subprocess from the agent server (the CLI is Node, so it can't run inside the extension):
+- **`CircleCliSigner`:** the default. It's a smart account, so it verifies through ERC-1271 and pays from an allowance.
+- **`LocalKeySigner`:** a testnet-only fallback, which signs permits.
 
-```bash
-npm install -g @circle-fin/cli
-circle wallet sign typed-data '<json>' --address 0xWallet --chain <CHAIN>
-```
+### 4.7 Callback
 
-Circle's docs say typed-data signing is supported on EVM chains, and Circle lists Arc testnet as a supported chain. **VERIFY (test first):**
-
-- Find the exact `--chain` identifier the CLI uses for Arc testnet (check the CLI help and Circle docs; don't guess it).
-- The backend needs a standard ECDSA `v, r, s` permit. Confirm the agent wallet's signature over the permit typed data (with Arc's chain ID in the domain) verifies via `ecrecover`. A smart-contract-account wallet might not.
-- Confirm the wallet's address is the same `user` address the backend expects, and that the permit's token (USDC on Arc testnet) supports the permit the backend builds.
-
-**Fallback:** `LocalKeySigner` using `eth_account` with a testnet-only key from env. Same interface. If the Circle path works, use it as the headline; if not, say so honestly and keep the Circle story to the spending policy and funding.
-
-**Spending policy:** if the Circle agent wallet supports caps and allowlists, set a small per-transaction and daily cap. Regardless, `verify.py` enforces its own caps in code.
-
-### 4.6 Callback
-
-On `COMPLETED` / `RELEASED`:
-
-- Emit an event to the side panel (toast plus status).
-- POST to a configurable webhook:
+A POST to a configurable webhook, and a toast in the side panel:
 
 ```json
-{
-  "session_id": "...",
-  "status": "PAID",
-  "offramp_id": "...",
-  "txHash": "...",
-  "amount_inr": 312,
-  "payee": "...",
-  "goal": "...",
-  "finished_at": "ISO-8601"
-}
+{ "session_id": "...", "status": "PAID", "offramp_id": "...", "txHash": "...", "amount_inr": 1, "payee": "...", "goal": "...", "finished_at": "ISO-8601" }
 ```
 
-Optional nicety: also screenshot the Swiggy confirmation page as extra proof, but don't depend on it.
+### 4.8 Arkiv payout board (`services/arkiv-board/`)
+
+Design in `arkiv/schema.md`. Jobs, claims, receipts and payer heartbeats, each owned by the wallet that acted and expiring when no longer useful. UPI details stay off Arkiv.
+
+To qualify, users must see data read from Arkiv:
+
+- The side panel and PWA show "Merchant paid" from a `paid` receipt from a known payer.
+- Both show whether a payer is online, from its heartbeat entity.
+- The PWA has a public board of open jobs and active payers.
+
+Reads go through a server-side proxy, because access keys must not reach a browser.
 
 ---
 
-## 5. Agent loop (LangGraph state machine)
+## 5. State machine
 
-State: `goal, constraints, step_count, history, last_observation, last_action, repeat_count, phase, qr_text, quote, payment_status`.
-
-Nodes:
+State: `goal, constraints, step_count, history, last_observation, last_action, repeat_count, phase, payment`.
 
 ```
-observe → decide → act → progress_check ─┐
-   ▲                                      │
-   └──────────────────────────────────────┘   (loop)
-
-progress_check routes to:
-  stuck        → escalate model (Jev → OpenAI), then → need_help
-  checkout     → extract_qr → quote → verify → sign → submit → poll → callback → done
-  step limit   → fail
-  user stop    → halt
+preflight → observe ─→ checkout detected by code ─→ pay → await payer's result → callback → done
+               │
+               ├→ stopped by the user ─→ halted
+               ├→ step or time limit ──→ failed
+               ├→ stuck ───────────────→ need_help (pause for the user)
+               └→ decide → act → observe
 ```
 
-Rules:
-
-- **Preflight at session start:** check the pre-funded wallet's balance (via `GET /wallet`). Refuse to start if it is below the session's `max_inr` equivalent (plus any fees).
-- Hard step limit (e.g. 40) and a time limit.
-- **Repeat detection:** if the same page state and action repeat twice, escalate; if still stuck, stop and report.
-- Pause and ask the user (side panel) for: login wall, CAPTCHA, OTP, ambiguous item, price over cap.
-- Phases: `search → select_item → cart → checkout → payment`. Include the phase in `state` text sent to the decider so choices stay focused.
-- Stop browsing when the payment page with the UPI option is reached; hand off to the payment module.
+- **Preflight:** refuses to start if the wallet's balance or allowance can't cover `max_inr`.
+- **Limits:** 40 steps, plus a time limit.
+- **Repeat detection:** the same page and action twice gets a screenshot sent to the model. If it's still stuck, the session pauses and asks the user.
+- **Pauses:** login wall, CAPTCHA, OTP, or an ambiguous item. A price over the limit ends the session as refused.
+- **Checkout:** code decides it has been reached, by finding one UPI QR and one clear total on an allowed origin. A model saying `checkout_reached` isn't enough.
 
 ---
 
-## 6. Message contracts (extension ↔ agent server)
+## 6. Messages between the extension and server
 
-Observation (up):
+Observation:
 
 ```json
 { "type": "observation", "url": "...", "title": "...", "page_text": "...",
-  "candidates": [ { "id": "a17", "role": "button", "text": "Add", "bbox": [x,y,w,h], "inViewport": true } ],
+  "candidates": [ { "id": "a17", "role": "button", "text": "Add", "bbox": [0, 0, 10, 10], "inViewport": true } ],
   "screenshot_b64": "..." }
 ```
 
-Action (down): the `Action` schema in 4.3. Result (up): `{ "type": "action_result", "ok": true, "error": null }`.
-
-Send the screenshot only when needed (Jev needs none; OpenAI fallback and QR decoding do).
+Action: the schema in 4.3. Result: `{ "type": "action_result", "ok": true, "error": null }`.
 
 ---
 
-## 7. Safety checks (code-enforced, never delegated to the LLM)
+## 7. Safety
 
-`verify.py` runs after `/quote` and before signing. All must pass:
+Enforced in code and never delegated to a model. `verify.py` runs after `/quote` and before signing, and is already built and tested.
 
-1. Whatever "section 5" of the backend docs requires (payee, amount, domains). Implement exactly.
-2. `payee` in the quote matches the `pa=` (VPA) in the decoded UPI string.
-3. `inr` in the quote equals the `am=` in the UPI string, equals the page's cart total, and is at most `max_inr` for the session and the global cap.
-4. The active tab's origin is in `allowed_domains` (e.g. `swiggy.com`).
-5. Quote and permit deadline are still in the future with a safety margin.
-6. The quote has not already been submitted (idempotency, one payment per session).
-7. A kill switch can abort at any point before `/offramp`.
+1. The quote's payee matches the QR's `pa=`.
+2. The quote's amount equals the page total, equals `am=` if present, and is within `max_inr`.
+3. The tab's origin is in `allowed_domains`.
+4. The quote and permit deadlines are still ahead, with a margin.
+5. The signed payloads match `/config`: chain, vault, token, wallet and spender.
+6. The rate is within 5% of market.
+7. One payment per session.
+8. The kill switch can stop anything before `/offramp`.
 
-Other rules: signing and keys only on the agent server; never put keys or model API keys in the extension; log every decision, but not secrets.
+**Spending limits, in layers:**
 
----
+| Layer | Limit |
+|---|---|
+| Vault allowance, on-chain | 5 USDC today. The vault can't pull more |
+| `max_inr`, per session | Set when the session starts |
+| Global cap | `AGENT_GLOBAL_MAX_INR`, default ₹30 |
+| Phone payer | Its own per-payment and daily caps, and the UPI Lite balance |
 
-## 8. Feature list
+Circle's own spending policies are mainnet-only, so they aren't used.
 
-**Must (demo core)**
+**Against a malicious page:**
 
-- Extension with side panel, goal input, live log, kill switch
-- DOM candidate extraction plus click/type/scroll execution on Swiggy
-- LangGraph loop with Jev decisions and OpenAI fallback
-- QR decode, quote, verify, sign, submit, poll
-- Wallet balance display (wallet is pre-funded, no funding flow)
-- Success callback (webhook plus UI)
+- Page text is marked to models as untrusted data, and they're told never to follow instructions in it.
+- The agent has no "go to URL" action, and it can only click elements that exist in the current snapshot.
+- A hostile page on an allowed origin can only influence clicks. It can't change the limits or the checks.
+- Reaching a checkout on a non-allowed origin stops the session.
 
-**Should (makes it convincing)**
+**Also:**
 
-- Spending cap and merchant allowlist (in code and in the wallet policy if supported)
-- Per-step model attribution in the log (which model decided what)
-- Ask-the-user pause on ambiguity or errors
-- Playwright fallback script that replays a known-good path
-
-**Could (only if time remains)**
-
-- Confirmation-page screenshot as proof
-- A second site via a mock store, to back the "any site" pitch
-- Order history in the side panel
-
-**Won't (this version)**
-
-- Funding or onramp flow (wallet is pre-funded)
-- Login/OTP automation, CAPTCHA solving
-- Refund/reversal handling
-- Multi-user accounts, production-grade key custody
+- A live payer pays any lock with real rupees, so automated tests use a fake off-ramp or an allowlisted payer.
+- Decisions are logged, but secrets aren't.
 
 ---
 
-## 9. Risks and mitigations
+## 8. Prize requirements
 
-| Risk                                                                                                                              | Mitigation                                                                                                                                 |
-| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Swiggy checkout may not show a UPI QR** (could be UPI ID entry, app redirect, or QR only on some views)                         | Milestone 0: do the checkout manually on desktop and record what appears. If no QR, change the plan or the demo site before building more. |
-| Circle wallet signature isn't accepted by the backend (smart account, wrong domain/chain ID), or the backend isn't set up for Arc | Test first (0b, 0d); fall back to `LocalKeySigner` behind the same interface; ask the backend owner to support Arc                         |
-| Pre-funded wallet runs out of balance or fees mid-demo                                                                            | Preflight balance check at session start; refuse to start below the session cap                                                            |
-| Swiggy UI changes or blocks automation                                                                                            | Playwright fallback; keep the demo path rehearsed; pre-set address and cart basics                                                         |
-| Agent loop is slow                                                                                                                | Jev for most steps (fast); cap candidates; screenshots only when needed                                                                    |
-| Quote or permit expires                                                                                                           | Request the quote last; poll with a timeout; fail clearly                                                                                  |
-| Bad decision moves money                                                                                                          | All payment checks in code; one payment per session; low caps; testnet                                                                     |
-| Jev's vision is experimental                                                                                                      | Use Jev on DOM candidates only; OpenAI for vision                                                                                          |
-| Live-demo failure                                                                                                                 | Pre-recorded run and the Playwright fallback ready                                                                                         |
+**Arc:**
+
+- [x] Built in Arc Studio, with a shareable project URL in `README.md`
+- [ ] Working frontend and backend
+- [ ] Architecture diagram
+- [ ] Demo video showing Arc Studio, with a presentation and documentation
+- [ ] State the bounty being submitted for
+
+**Arkiv:**
+
+- [ ] Writes to Rabdi, and a feature users see reads from Arkiv
+- [ ] README with the writer wallets and one runnable query
+- [ ] `arkiv/schema.md`, `friction.md`, `reach.md`, `why-arkiv.md`, `how-you-use-arkiv.md`
+
+**Both:**
+
+- [ ] A public repo with an open-source license, after a secret scan
+- [ ] State how AI was used
+- [ ] Replace `apps/mock-store/upi.png` or get its owner's consent before going public
+
+---
+
+## 9. Risks
+
+| Risk | Mitigation |
+|---|---|
+| A real site may not offer a UPI QR on desktop | Check its checkout by hand once before relying on it |
+| The backend rejects BharatQR, and a real site's QR may be one | The agent refuses it before paying. Check by hand first |
+| Google Pay shows a different name from the QR's, so the screen check stops the payment | It fails safely. Rehearse with that merchant before a demo |
+| UPI Lite's balance is low, and a real order costs more than it holds | Top up before any real order |
+| The phone's screen state breaks the tap sequence | The payer returns to home first, and refuses to tap otherwise. Leave the phone alone during a demo |
+| The payer is offline, so a lock completes with nobody paid | The agent reports NO RESULT. Payer heartbeats arrive with Milestone 5 |
+| Quote expires | Request it last |
+| Model is slow or makes bad choices | Cap the candidates, keep the rule-based decider as a demo fallback |
+| A real site blocks automation or ignores synthetic clicks | It's a stretch goal |
+| Live demo failure | A recorded backup run |
 
 ---
 
 ## 10. Build order
 
-**Milestone 0: spikes (do these first, about 1 to 2 hours total)**
+**Milestone 0: checks.** Circle signing and the off-ramp on Arc are done. Swiggy deferred.
 
-- [ ] **0a.** Manually go through Swiggy checkout on desktop. Record payment options and whether a UPI QR or `upi://` appears. Save screenshots in `docs/`.
-- [ ] **0b.** Run `circle wallet sign typed-data` on Arc testnet with a dummy permit payload (Arc chain ID in the domain). Find the right `--chain` value, and check `ecrecover` validity.
-- [ ] **0c.** Make one call to Jev's evaluate endpoint (choice question over 5 sample candidates). Record latency and format.
-- [ ] **0d.** Walk the existing off-ramp endpoints end to end on **Arc testnet** with a hardcoded QR string. Confirm the backend accepts Arc and you can reach `COMPLETED`. Use a local-key signer here if the Circle signer isn't ready yet.
+**Milestone 1: payment path.** Built and tested with a real ₹1. Left to do: payer results and the callback.
 
-**Milestone 1: payment path without the browser.** Agent server takes a `qrText` and goes quote → verify → sign → submit → poll → callback. Test with a QR image file.
+**Milestone 2: extension skeleton.** Side panel, service worker and content script. It takes a screenshot, lists candidates, and runs a click sent by the server.
 
-**Milestone 2: extension skeleton.** Side panel, service worker, content script; take a screenshot, produce a candidate list, execute a click from the server.
+**Milestone 3: agent loop.** The state machine with the rule-based decider, working on the mock store. Then the OpenAI decider, once a key is available.
 
-**Milestone 3: agent loop.** LangGraph graph with Jev and OpenAI decisions; reach the Swiggy cart from a goal.
+**Milestone 4: stitch.** Goal to payment to payer's result to callback, live on the mock store.
 
-**Milestone 4: stitch.** Checkout to QR to payment to callback, live on Swiggy.
+**Milestone 5: Arkiv board.** Publisher, payer claims and receipts, and heartbeats. Then the proxy and the screens that read from Arkiv. Switch `PayoutResults` to Arkiv.
 
-**Milestone 5: hardening and demo.** Caps and allowlist, ask-the-user pauses, repeat detection, Playwright fallback, recorded backup run, demo script.
+**Milestone 6: hardening and submission.** Pauses and repeat detection, the architecture diagram, prize files, a recorded run, and the demo script.
 
----
-
-## 11. VERIFY list (record answers in `docs/verify-log.md`)
-
-1. Does Swiggy web checkout expose a UPI QR or `upi://` string? (0a)
-2. What `--chain` value does the Circle CLI use for Arc testnet, and are the agent wallet's signatures ECDSA-verifiable by the backend? (0b)
-   2b. Does the off-ramp backend support Arc testnet (chain ID, token/permit contract), or is it hardcoded to Whitechain? (0d)
-3. Jev evaluate endpoint format, latency, limits on number of choices, and confidence output (0c)
-4. Exact verification rules in the backend's "section 5" (0d)
-5. Quote and permit expiry windows
-6. Whether plain `.click()` works on Swiggy or real mouse events are needed
-7. Whether a Circle spending policy can be applied to the wallet from the CLI
+**Stretch:** a real site such as Amazon, and an automatic dispute when the payer reports `failed`.
 
 ---
 
-## 12. Suggested repo layout
+## 11. Open questions
+
+Answers go in `docs/verify-log.md`.
+
+1. Does a real site's web checkout, such as Amazon's, show a usable UPI QR? Only needed for the stretch goal.
+2. What are the backend's "section 5" rules? The document isn't in this repo. `verify.py` uses the checks in section 7 until it arrives.
+3. Which OpenAI model gives the best speed for this? Test once there's a key.
+4. Does the extension's screenshot read the QR reliably at normal window sizes? Test in Milestone 2.
+
+---
+
+## 12. Repo layout
 
 ```
-/extension        # TypeScript MV3: content script, service worker, side panel
-/agent-server     # Python: FastAPI, LangGraph graph, deciders, payment, signer, verify
-  app/graph.py
-  app/deciders/{jev.py,openai_vision.py,router.py}
-  app/payment/{qr.py,offramp_client.py,verify.py,poller.py}
-  app/signers/{circle_cli.py,local_key.py}
-  app/callbacks.py
-/fallback         # Playwright script for the known-good Swiggy path
-/docs             # backend-notes.md, verify-log.md, demo-script.md, screenshots
-plan.md
+/extension              TypeScript MV3: content script, service worker, side panel
+/agent-server           Python: FastAPI, state machine, deciders, payment, signers, results
+/services/arkiv-board   TypeScript: Arkiv writes
+/apps/mock-store        The demo checkout
+/apps/upi-payer         Phone payer
+/apps/web               PWA
+/docs                   Status, verify log, backend notes
+/arkiv                  Prize files
 ```
