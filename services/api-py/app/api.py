@@ -15,15 +15,17 @@ import json
 import time
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Header, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Header, Query, Request
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from .common import ApiError
 from .eip712 import EIP712_DOMAIN, TYPES_FOR_CLIENTS
 from .qr import REFUND_REASONS
 from .quote_service import domains
+from .razorpay import LINK_EVENTS, verify_callback_signature, verify_webhook_signature
 
 router = APIRouter()
 
@@ -179,6 +181,8 @@ async def health(request: Request) -> dict:
             "listeners": {k: lst.status() for k, lst in ctx.listeners.items()},
             "settlerLastError": ctx.settler.last_error,
             "keeperLastError": ctx.keeper.last_error,
+            "collectRail": ctx.settings.collect_rail,
+            "onrampLastError": ctx.onramp.last_error,
             "sseSubscribers": ctx.hub.subscribers,
             "onchainRoles": ctx.onchain_roles,
         },
@@ -327,7 +331,60 @@ def _require_admin(ctx, token: str | None) -> None:
 async def post_onramp(body: OnrampReq, request: Request) -> dict:
     ctx = ctx_of(request)
     ctx.limiter.check(f"onramp:{_client_ip(request)}")
-    return ctx.onramp.create(body.chain, body.wallet, body.inr)
+    return await ctx.onramp.create(body.chain, body.wallet, body.inr)
+
+
+# Razorpay (COLLECT_RAIL=razorpay). Both routes only *nudge* OnrampService.confirm_razorpay, which pays
+# only after fetching the link from Razorpay. Declared before /onramp/{order_id}.
+
+def _razorpay(ctx):
+    if ctx.onramp.razorpay is None:
+        raise ApiError(404, "RAIL_DISABLED", "the razorpay collect rail is not enabled")
+    return ctx.onramp.razorpay
+
+
+@router.get("/onramp/razorpay/callback")
+async def razorpay_callback(request: Request, background: BackgroundTasks):
+    """Razorpay redirects the payer's browser here after paying; we send them on to the web app."""
+    ctx = ctx_of(request)
+    rz = _razorpay(ctx)
+    params = dict(request.query_params)
+    verified = verify_callback_signature(params, rz.creds.key_secret)
+    link = ctx.onramp.note(params["razorpay_payment_link_id"]) if verified else None
+    if link is not None:
+        background.add_task(ctx.onramp.confirm_razorpay, link["link_id"])
+    order_id = link["order_id"] if link else None
+    if not ctx.settings.web_app_url:
+        return {"orderId": order_id, "verified": verified}
+    query = urlencode({"onramp": order_id or "", "payment": "received" if link else "unverified"})
+    return RedirectResponse(f"{ctx.settings.web_app_url}/?{query}", status_code=303)
+
+
+@router.post("/onramp/razorpay/webhook")
+async def razorpay_webhook(request: Request, background: BackgroundTasks,
+                           x_razorpay_signature: str | None = Header(default=None),
+                           x_razorpay_event_id: str | None = Header(default=None)) -> dict:
+    """Server-to-server. Must answer 2xx fast, or Razorpay retries; payment runs after the response."""
+    ctx = ctx_of(request)
+    rz = _razorpay(ctx)
+    raw = await request.body()  # the signature covers these exact bytes
+    if not verify_webhook_signature(raw, x_razorpay_signature, rz.creds.webhook_secret):
+        raise ApiError(400, "BAD_SIGNATURE", "webhook signature does not verify")
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        raise ApiError(400, "BAD_REQUEST", "webhook body is not JSON") from None
+    name = str(event.get("event") or "")
+    if x_razorpay_event_id and not ctx.store.record_razorpay_event(x_razorpay_event_id[:128], name):
+        return {"ok": True, "duplicate": True}
+    link_id = (((event.get("payload") or {}).get("payment_link") or {}).get("entity") or {}).get("id")
+    if name not in LINK_EVENTS or not isinstance(link_id, str):
+        return {"ok": True, "ignored": name}
+    link = ctx.onramp.note(link_id)
+    if link is None:
+        return {"ok": True, "ignored": "unknown link"}  # e.g. another backend's order on the same account
+    background.add_task(ctx.onramp.confirm_razorpay, link_id)
+    return {"ok": True}
 
 
 @router.get("/onramp/{order_id}")
