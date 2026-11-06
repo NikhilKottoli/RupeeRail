@@ -68,6 +68,26 @@ export interface OfframpView {
   explorer: string | null;
 }
 
+export type OnrampStatusName = "AWAITING_FIAT" | "PAYING" | "PAID" | "EXPIRED" | "FAILED";
+
+/** An INR -> token purchase. `amount` is already in token units; `checkout` is null on the manual rail. */
+export interface OnrampOrder {
+  orderId: string;
+  chain: ChainKey;
+  wallet: string;
+  inrPaise: string;
+  amount: string;
+  amountBaseUnits: string;
+  symbol: string | null;
+  rate: string;
+  payTo: { upiId: string; note: string } | null;
+  checkout: { provider: "razorpay"; url: string; linkId: string; expiresAt: string; paymentId: string | null } | null;
+  status: OnrampStatusName | string;
+  paidTx: string | null;
+  explorer: string | null;
+  lastError: string | null;
+}
+
 const FRIENDLY: Record<string, string> = {
   INSUFFICIENT_BALANCE: "Your wallet doesn't have enough for this payment.",
   QUOTE_EXPIRED: "That rate expired. Get a new one to continue.",
@@ -82,6 +102,11 @@ const FRIENDLY: Record<string, string> = {
   BAD_INTENT_SIG: "The wallet's signature didn't match. Please try again.",
   BAD_PERMIT_SIG: "The wallet's token approval didn't match. Please try again.",
   BAD_DISPUTE_SIG: "Dispute with the wallet that made this payment.",
+  POOL_INSUFFICIENT: "We can't sell that much right now. Try a smaller amount.",
+  DAILY_CAP: "Today's buying limit has been reached. Try a smaller amount or come back tomorrow.",
+  PAYMENT_PROVIDER: "Couldn't start the payment. Please try again.",
+  CHAIN_UNAVAILABLE: "The network isn't responding. Try again in a moment.",
+  UNKNOWN_ORDER: "We couldn't find that purchase.",
 };
 
 export class ApiError extends Error {
@@ -122,4 +147,6 @@ export const api = {
   history: (user: string) => call<{ items: OfframpView[] }>(`/offramps?user=${encodeURIComponent(user)}`),
   dispute: (chain: ChainKey, id: string, deadline: string, userSig: string) =>
     post<{ id: string; txHash: string; status: string }>("/dispute", { chain, id, deadline, userSig }),
+  onramp: (chain: ChainKey, wallet: string, inr: string) => post<OnrampOrder>("/onramp", { chain, wallet, inr }),
+  onrampOrder: (orderId: string) => call<OnrampOrder>(`/onramp/${encodeURIComponent(orderId)}`),
 };

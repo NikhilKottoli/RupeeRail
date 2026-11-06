@@ -64,13 +64,19 @@ def create_app(ctx: Any = None, *, workers: bool | None = None, fx: bool | None 
             from .context import build_context
 
             ctx = build_context(Settings())
+        from .environment import assert_ready
+
+        assert_ready(ctx.settings)  # dev/prod: a no-op in dev; prod won't start on a dev rail (app/environment.py)
         app.state.ctx = ctx
         ctx.started_at = time.time()
         run_workers = ctx.settings.workers if workers is None else workers
         run_fx = (os.environ.get("FX", "1") not in ("0", "false", "no")) if fx is None else fx
         ctx.settings.workers = run_workers
-        log.info("RupeeRail API: chains=%s workers=%s dryRun=%s db=%s", list(ctx.chains), run_workers,
-                 ctx.settings.dry_run, ctx.settings.db_path)
+        log.info("RupeeRail API: chains=%s workers=%s dryRun=%s db=%s collect=%s", list(ctx.chains), run_workers,
+                 ctx.settings.dry_run, ctx.settings.db_path, ctx.settings.collect_rail)
+        if ctx.onramp.razorpay is not None:
+            log.info("razorpay: %r, callback %s/onramp/razorpay/callback, webhook %s/onramp/razorpay/webhook",
+                     ctx.onramp.razorpay.creds, ctx.settings.public_base_url, ctx.settings.public_base_url)
         log.info("addresses: %s", ctx.keys.addresses())
         tasks: list[asyncio.Task] = []
         if run_fx:
@@ -84,6 +90,8 @@ def create_app(ctx: Any = None, *, workers: bool | None = None, fx: bool | None 
                 tasks.append(asyncio.create_task(lst.run(), name=f"listener:{k}"))
             tasks.append(asyncio.create_task(ctx.settler.run(ctx.settings.settler_tick_sec), name="settler"))
             tasks.append(asyncio.create_task(ctx.keeper.run(ctx.settings.keeper_tick_sec), name="keepers"))
+            if ctx.onramp.razorpay is not None:
+                tasks.append(asyncio.create_task(ctx.onramp.run(ctx.settings.onramp_tick_sec), name="onramp"))
         try:
             yield
         finally:
@@ -94,6 +102,8 @@ def create_app(ctx: Any = None, *, workers: bool | None = None, fx: bool | None 
                 for t in list(lst.tasks):
                     t.cancel()
             await ctx.fx.close()
+            if ctx.onramp.razorpay is not None:
+                await ctx.onramp.razorpay.close()
             for c in ctx.clients.values():
                 close = getattr(c, "close", None)
                 if close:

@@ -1,4 +1,5 @@
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
+import AddCardOutlined from "@mui/icons-material/AddCardOutlined";
 import InstallMobileOutlined from "@mui/icons-material/InstallMobileOutlined";
 import QrCodeScanner from "@mui/icons-material/QrCodeScanner";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
@@ -18,12 +19,16 @@ import Paper from "@mui/material/Paper";
 import Toolbar from "@mui/material/Toolbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
+import Stack from "@mui/material/Stack";
 import { useCallback, useEffect, useRef, useState } from "react";
+import BuyScreen from "./components/BuyScreen";
 import ConnectScreen from "./components/ConnectScreen";
 import HistoryScreen from "./components/HistoryScreen";
+import OnrampStatus from "./components/OnrampStatus";
 import PayScreen from "./components/PayScreen";
 import { api, type AppConfig } from "./lib/api";
 import { shortAddress } from "./lib/format";
+import { parseOnrampReturn, stripOnrampReturn } from "./lib/onramp";
 import {
   connectWallet, discoverWallets, existingAccount, walletErrorMessage, type Eip1193Provider, type WalletOption,
 } from "./lib/wallet";
@@ -42,7 +47,9 @@ export default function App() {
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"pay" | "history">("pay");
+  // Razorpay sends the browser back to /?onramp=<orderId>&payment=received after a purchase.
+  const [returned, setReturned] = useState(() => parseOnrampReturn(window.location.search));
+  const [tab, setTab] = useState<"pay" | "buy" | "history">(() => (returned ? "buy" : "pay"));
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const restored = useRef(false);
@@ -52,6 +59,12 @@ export default function App() {
     api.config().then(setConfig).catch((e: Error) => setConfigError(e.message));
   }, []);
   useEffect(loadConfig, [loadConfig]);
+  useEffect(() => {
+    // Read once, then drop it from the address bar so a reload doesn't show the return again.
+    if (parseOnrampReturn(window.location.search)) {
+      window.history.replaceState(window.history.state, "", stripOnrampReturn(window.location.href));
+    }
+  }, []);
   useEffect(() => discoverWallets(setWallets), []);
 
   useEffect(() => {
@@ -162,9 +175,18 @@ export default function App() {
             <CircularProgress aria-label="Loading" />
           </Box>
         ) : !address || !provider ? (
-          <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
+          returned ? (
+            <Stack spacing={3}>
+              <OnrampStatus config={config} orderId={returned.orderId} justPaid={returned.payment === "received"} />
+              <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
+            </Stack>
+          ) : (
+            <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
+          )
         ) : tab === "pay" ? (
           <PayScreen key={address} config={config} provider={provider} address={address} />
+        ) : tab === "buy" ? (
+          <BuyScreen key={address} config={config} address={address} returned={returned} />
         ) : (
           <HistoryScreen key={address} config={config} provider={provider} address={address} />
         )}
@@ -176,8 +198,16 @@ export default function App() {
           elevation={0}
           sx={{ position: "fixed", bottom: 0, left: 0, right: 0, borderTop: 1, borderColor: "divider", pb: "env(safe-area-inset-bottom)", zIndex: "appBar" }}
         >
-          <BottomNavigation showLabels value={tab} onChange={(_, value) => setTab(value)}>
+          <BottomNavigation
+            showLabels
+            value={tab}
+            onChange={(_, value) => {
+              setReturned(null);  // the Razorpay return is shown once; coming back to Buy starts fresh
+              setTab(value);
+            }}
+          >
             <BottomNavigationAction label="Pay" value="pay" icon={<QrCodeScanner />} />
+            <BottomNavigationAction label="Buy" value="buy" icon={<AddCardOutlined />} />
             <BottomNavigationAction label="History" value="history" icon={<ReceiptLongOutlined />} />
           </BottomNavigation>
         </Paper>
