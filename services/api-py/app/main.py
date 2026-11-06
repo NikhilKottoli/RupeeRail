@@ -64,6 +64,9 @@ def create_app(ctx: Any = None, *, workers: bool | None = None, fx: bool | None 
             from .context import build_context
 
             ctx = build_context(Settings())
+        from .environment import assert_ready
+
+        assert_ready(ctx.settings)  # dev/prod: a no-op in dev; prod won't start on a dev rail (app/environment.py)
         app.state.ctx = ctx
         ctx.started_at = time.time()
         run_workers = ctx.settings.workers if workers is None else workers
