@@ -3,7 +3,7 @@
   "chainId": 1874,
   "rpc": "https://rpc.testnet.whitechain.io",
   "explorer": "https://explorer.testnet.whitechain.io",
-  "vault": "0xfe050924c876161cf876c7e5697d8eefd1539d63",
+  "vault": "0x326fa638bc40ebb605bedb86b990e8d3da4765c1",
   "token": {
     "symbol": "USDT",
     "address": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
@@ -29,13 +29,20 @@
     "maxOfframpAmount": "100000000",
     "dailyEmitCap": "1000000000"
   },
-  "contractCommit": "1b82e62",
-  "deployTx": "0x1467238ee4376d5e1e45b3e3a31c14bef4a550bbaa5aae5eb544f92d0bdb097f",
+  "contractCommit": "C1 fix (disputeOfframpWithSig) on top of 1b82e62",
+  "deployTx": "0x6f9b6a336f67a3b33df51193d905fffc6051170a1502fdc563e33287c14a6b35",
   "deployedBy": "Claude Code (viem deployContract with the Foundry-compiled bytecode, from the owner key)",
   "verified": true,
-  "previous": {
-    "vault": "0x6f89445d0CD31C26D091Bc47F6C5566E1fBF5982",
-    "note": "old API (string qrText, no quoteSig); superseded, pool 0",
-    "smokeLog": "deployments/whitechain.smoke.log"
-  }
+  "previous": [
+    {
+      "vault": "0xfe050924c876161cf876c7e5697d8eefd1539d63",
+      "deployTx": "0x1467238ee4376d5e1e45b3e3a31c14bef4a550bbaa5aae5eb544f92d0bdb097f",
+      "note": "security-review version without relayed disputes (C1); superseded, pool 0"
+    },
+    {
+      "vault": "0x6f89445d0CD31C26D091Bc47F6C5566E1fBF5982",
+      "note": "old API (string qrText, no quoteSig); superseded, pool 0",
+      "smokeLog": "deployments/whitechain.smoke.log"
+    }
+  ]
 }

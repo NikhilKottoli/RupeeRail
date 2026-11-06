@@ -29,7 +29,7 @@ contract ScanPayVaultInvariantTest is Test {
         handler = new Handler(vault, token, owner, settler, arbiter, guardian, quotePk);
 
         targetContract(address(handler));
-        bytes4[] memory sels = new bytes4[](32);
+        bytes4[] memory sels = new bytes4[](34);
         sels[0] = Handler.offramp.selector;
         sels[1] = Handler.complete.selector;
         sels[2] = Handler.lockAndComplete.selector;
@@ -63,6 +63,8 @@ contract ScanPayVaultInvariantTest is Test {
         sels[29] = Handler.claimTimeout.selector;
         sels[30] = Handler.setDisputeTimeout.selector;
         sels[31] = Handler.resolve.selector;
+        sels[32] = Handler.disputeWithSig.selector;
+        sels[33] = Handler.disputeWithSig.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sels}));
     }
 
@@ -209,13 +211,13 @@ contract ScanPayVaultInvariantTest is Test {
 
     /// @dev Logs call/success counters per run (visible with -vv).
     function afterInvariant() public view {
-        string[23] memory names = [
+        string[24] memory names = [
             "offramp", "complete", "refund", "reverse", "reclaim", "dispute", "release", "resolveRefund",
             "resolveRelease", "onramp", "fund", "withdraw", "donate", "sweep", "warp", "setCompleteDelay",
             "setDisputeWindow", "setReclaimDelay", "setLimits", "pause", "guardianPause", "claimTimeout",
-            "setDisputeTimeout"
+            "setDisputeTimeout", "disputeWithSig"
         ];
-        for (uint256 i; i < 23; i++) {
+        for (uint256 i; i < 24; i++) {
             console2.log(names[i], handler.calls(i), handler.succ(i));
         }
     }
@@ -264,6 +266,27 @@ contract ScanPayVaultInvariantTest is Test {
         handler.lockAndComplete(0, 3e6, 11);
         handler.dispute(1);
         handler.resolve(1 | (uint256(1) << 64), true);
+        // id4d: lock+complete, the user's signed dispute is relayed by a third party, then the arbiter resolves
+        handler.lockAndComplete(1, 2e6, 13);
+        handler.disputeWithSig(1, 0);
+        assertEq(handler.succ(23), 1, "relayed dispute must succeed");
+        handler.resolve(1, true);
+        // id4e: lock+complete; expired deadline / foreign signer / wrong signed deadline / closed window all fail
+        handler.lockAndComplete(2, 1e6, 17);
+        handler.disputeWithSig(1, 4);
+        handler.disputeWithSig(1, 5);
+        handler.disputeWithSig(1, 5 | (uint256(1) << 16));
+        handler.disputeWithSig(1, 7);
+        assertEq(handler.succ(23), 1, "bad relayed disputes must not succeed");
+        handler.disputeWithSig(1, 6); // warps to releasableAt: window closed
+        assertEq(handler.succ(23), 1, "relayed dispute outside the window must not succeed");
+        assertFalse(handler.badRule(), "a forbidden call succeeded");
+        handler.release(1); // window genuinely closed: the id releases into the pool
+        // id4f: last valid second, signature relayed by a role address
+        handler.lockAndComplete(0, 3e6, 19);
+        handler.disputeWithSig(1, 3 | (uint256(3) << 24));
+        assertEq(handler.succ(23), 2, "last-second relayed dispute must succeed");
+        handler.claimTimeout(1 | (uint256(1) << 64), 0);
         // id5: lock+complete, release after the dispute window
         handler.lockAndComplete(2, 7e6, 5);
         vm.warp(block.timestamp + 24 hours);
@@ -283,7 +306,7 @@ contract ScanPayVaultInvariantTest is Test {
         handler.togglePause(1); // unpause
         handler.setDisputeTimeout(3 | (uint256(2 days) << 8)); // in-bounds, succeeds
 
-        for (uint256 i; i < 23; i++) {
+        for (uint256 i; i < 24; i++) {
             assertGt(handler.succ(i), 0, string.concat("no success path for action ", vm.toString(i)));
         }
         _checkAll();

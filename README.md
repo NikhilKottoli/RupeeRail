@@ -6,5 +6,5 @@
 
 | Chain | ScanPayVault |
 |---|---|
-| Arc testnet (5042002) | [`0xef2b4bfdf555f38fe2579e1e283f0d551175bd2b`](https://explorer.testnet.arc.io/address/0xef2b4bfdf555f38fe2579e1e283f0d551175bd2b) |
-| Whitechain Sepolia (1874) | [`0xfe050924c876161cf876c7e5697d8eefd1539d63`](https://explorer.testnet.whitechain.io/address/0xfe050924c876161cf876c7e5697d8eefd1539d63) |
+| Arc testnet (5042002) | [`0x878734374e6131fceeeb83fa8605ab49f4d21836`](https://explorer.testnet.arc.io/address/0x878734374e6131fceeeb83fa8605ab49f4d21836) |
+| Whitechain Sepolia (1874) | [`0x326fa638bc40ebb605bedb86b990e8d3da4765c1`](https://explorer.testnet.whitechain.io/address/0x326fa638bc40ebb605bedb86b990e8d3da4765c1) |

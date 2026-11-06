@@ -28,7 +28,9 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
  * holds funds through a dispute window, rather than immediately adding them to the pool.
  * Held funds can go only to the original user (reversal or dispute refund), or to the
  * pool (permissionless release after the window, or arbiter resolution). They never go
- * directly to the settler. A user dispute freezes release and snapshots a resolution deadline.
+ * directly to the settler. Users dispute directly or by EIP-712 signature relayed by anyone,
+ * so zero-gas users keep their only defence against a dishonest completion. A dispute freezes
+ * release and snapshots a resolution deadline.
  * Before that deadline only the arbiter can refund the user or release disputed funds to the pool;
  * at/after it anyone can return the held funds to the original user via claimDisputeTimeout.
  * The chain cannot prove a fiat payment: the settler reports it and the arbiter adjudicates.
@@ -94,6 +96,10 @@ contract ScanPayVault is Ownable2Step, EIP712, ReentrancyGuard, Pausable {
 
     bytes32 public constant OFFRAMP_INTENT_TYPEHASH = keccak256(
         "OfframpIntent(bytes32 id,address user,uint256 amount,uint64 inrPaise,uint64 rateE6,bytes32 qrCommitment,uint64 deadline)"
+    );
+    /// @notice EIP-712 type hash for a user-authorized dispute.
+    bytes32 public constant DISPUTE_INTENT_TYPEHASH = keccak256(
+        "DisputeIntent(bytes32 id,address user,uint64 deadline)"
     );
     /// @notice Smallest dispute window the owner may configure.
     uint256 public constant MIN_DISPUTE_WINDOW = 1 hours;
@@ -233,6 +239,11 @@ contract ScanPayVault is Ownable2Step, EIP712, ReentrancyGuard, Pausable {
         )));
     }
 
+    /// @notice Returns the full EIP-712 digest the original user signs to authorize a dispute.
+    function hashDispute(bytes32 id, address user, uint64 deadline) public view returns (bytes32 digest) {
+        return _hashTypedDataV4(keccak256(abi.encode(DISPUTE_INTENT_TYPEHASH, id, user, deadline)));
+    }
+
     /// @notice Locks a user-authorized, quote-signed amount; anyone may relay both signatures.
     /// @dev Supports ERC-1271 users. A failed/front-run permit is tolerated only if allowance suffices.
     function offramp(
@@ -344,11 +355,25 @@ contract ScanPayVault is Ownable2Step, EIP712, ReentrancyGuard, Pausable {
     function disputeOfframp(bytes32 id) external nonReentrant {
         Offramp storage item = _withStatus(id, Status.COMPLETED);
         if (msg.sender != item.user) revert UnauthorizedUser(msg.sender);
+        _dispute(id, item);
+    }
+
+    /// @notice Lets anyone relay the original user's signed dispute before release opens.
+    /// @dev Available while paused; supports ERC-1271 users. Anyone may submit a signed dispute
+    /// up to its deadline and until the dispute window closes, but it can only dispute this signed id.
+    /// Replay needs no nonce: COMPLETED -> DISPUTED happens only once per id; a replay hits InvalidStatus.
+    /// The digest binds id and user, and single-use ids prevent stale signatures disputing later offramps.
+    /// Snapshots block.timestamp + disputeTimeout as the resolve deadline, just like a direct dispute.
+    function disputeOfframpWithSig(bytes32 id, uint64 deadline, bytes calldata userSig) external nonReentrant {
+        Offramp storage item = _withStatus(id, Status.COMPLETED);
+        if (block.timestamp > deadline) revert IntentExpired(deadline);
+        // Check the window before signature validation to preserve deterministic error ordering.
         uint256 expiresAt = deadlines[id].releasableAt;
         if (block.timestamp >= expiresAt) revert DisputeWindowExpired(expiresAt);
-        item.status = Status.DISPUTED;
-        deadlines[id].releasableAt = _toUint64(block.timestamp + disputeTimeout);
-        emit OfframpDisputed(id, item.user, item.amount);
+        if (!SignatureChecker.isValidSignatureNow(item.user, hashDispute(id, item.user, deadline), userSig)) {
+            revert InvalidSignature();
+        }
+        _dispute(id, item);
     }
 
     /// @notice Lets anyone release undisputed completed funds into the pool once the window ends.
@@ -552,6 +577,14 @@ contract ScanPayVault is Ownable2Step, EIP712, ReentrancyGuard, Pausable {
     /// @notice Ownership cannot be renounced; use the inherited two-step transfer instead.
     function renounceOwnership() public override onlyOwner {
         revert OwnershipRenunciationDisabled();
+    }
+
+    function _dispute(bytes32 id, Offramp storage item) internal {
+        uint256 expiresAt = deadlines[id].releasableAt;
+        if (block.timestamp >= expiresAt) revert DisputeWindowExpired(expiresAt);
+        item.status = Status.DISPUTED;
+        deadlines[id].releasableAt = _toUint64(block.timestamp + disputeTimeout);
+        emit OfframpDisputed(id, item.user, item.amount);
     }
 
     function _pullExact(address from, uint256 amount) internal {

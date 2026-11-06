@@ -6,8 +6,8 @@
       "pulledAt": "2026-11-06T06:20:04.293Z"
     },
     "contracts/README.md": {
-      "hash": "edd56b3749e3442d9848b21a8becb9d5a3386aad303154ca6f3bf1b648a95943",
-      "pulledAt": "2026-11-06T09:11:34.817Z"
+      "hash": "583788a8b0953c0799d467528899b13d95c0fb0ee16f6b8d76c459e39600a19d",
+      "pulledAt": "2026-11-06T09:32:29.933Z"
     },
     "contracts/foundry.toml": {
       "hash": "c276979f0d3d505e756a59001ed0ea73a23a69b5992b697fee736ff0d25b5f49",
@@ -26,8 +26,8 @@
       "pulledAt": "2026-11-06T06:20:04.295Z"
     },
     "contracts/src/ScanPayVault.sol": {
-      "hash": "095cbf9b32ff1a0864af7ba9ad5c93b4f7e71fde92afd2238ac7d5e1e119b49d",
-      "pulledAt": "2026-11-06T09:11:34.817Z"
+      "hash": "8a90e8b69bfdbaa7a1514f10bdba8f35f7d6b0ca355f62a10c26e782e32a66f5",
+      "pulledAt": "2026-11-06T09:32:29.934Z"
     },
     "contracts/test/.gitkeep": {
       "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -70,8 +70,8 @@
       "pulledAt": "2026-11-06T08:52:51.891Z"
     },
     "contracts/test/fork/ForkBase.t.sol": {
-      "hash": "2398d8fb16f41d26a0b9152155e859b5e47af481e39af4b423055049925dead1",
-      "pulledAt": "2026-11-06T09:11:34.818Z"
+      "hash": "abe33b216c0dcb811d1ec1cae0a4a127e4a8d5819c081cfaf41a5b2b1383e65d",
+      "pulledAt": "2026-11-06T09:32:29.936Z"
     },
     "contracts/test/fork/ForkWhitechain.t.sol": {
       "hash": "38b12e2bd0d333641b3272bcd026a644675ed3e8e30b93cd21818b9c11fe3ce2",
@@ -82,12 +82,12 @@
       "pulledAt": "2026-11-06T08:52:51.891Z"
     },
     "contracts/test/invariant/Handler.sol": {
-      "hash": "d4588df2b1772dd3b3688830b6254c53fb0908e679078650f467f66ea9b7a533",
-      "pulledAt": "2026-11-06T09:11:34.819Z"
+      "hash": "969e1bf5a4944e2bc4cce42c3a3c919cb8566b8985b719838c6d59823b56c3d4",
+      "pulledAt": "2026-11-06T09:32:29.937Z"
     },
     "contracts/test/invariant/ScanPayVaultInvariant.t.sol": {
-      "hash": "9dbc25be9495b21cbba26e1f54059843b5d3d920b882645edd26663004d939af",
-      "pulledAt": "2026-11-06T09:11:34.819Z"
+      "hash": "12d2de521e8ad80e44f68422f0f3e4aa57ff758bcf6ac9ad182ba45dd5948311",
+      "pulledAt": "2026-11-06T09:32:29.937Z"
     },
     "contracts/test/mocks/MockBlocklistToken.sol": {
       "hash": "a7c895ce939a91e1c01226f40c0d61f3a5f7ca076ec9f788bb0ccc153a1c458b",
@@ -160,6 +160,26 @@
     "contracts/test/ScanPayVaultDisputeTimeoutBase.t.sol": {
       "hash": "9c0a99782abd0f2ff95cc3550c6c817cd441473bb2398d3ab4e4bfd58551ca43",
       "pulledAt": "2026-11-06T09:11:34.818Z"
+    },
+    "contracts/test/ScanPayVault.DisputeWithSig.Base.t.sol": {
+      "hash": "c25afb993cf56ac4de34c8d21ee11e715ca6fb8accc0e83ac23dea18dadb3a4c",
+      "pulledAt": "2026-11-06T09:32:29.934Z"
+    },
+    "contracts/test/ScanPayVault.DisputeWithSig.Flow.t.sol": {
+      "hash": "5f2edfa7d4a6df1205f21caf044a0e0e682a91ea3c9cec4a2d33c0ae0797b691",
+      "pulledAt": "2026-11-06T09:32:29.934Z"
+    },
+    "contracts/test/ScanPayVault.DisputeWithSig.Fuzz.t.sol": {
+      "hash": "1fc9608b91963d1e316eb425e8545c401bb34ad4777c1ae72243ba42fc90eda2",
+      "pulledAt": "2026-11-06T09:32:29.934Z"
+    },
+    "contracts/test/ScanPayVault.DisputeWithSig.Revert.t.sol": {
+      "hash": "54846a31b7e6900e4082225aebdabf7227507d00630a473ac1a53ac95428d7ec",
+      "pulledAt": "2026-11-06T09:32:29.934Z"
+    },
+    "contracts/test/ScanPayVault.DisputeWithSig.t.sol": {
+      "hash": "5b9bc55e06fbb34aede746063c101a0d05372813bb9dda8c773f50ea3371e804",
+      "pulledAt": "2026-11-06T09:32:29.935Z"
     }
   }
 }

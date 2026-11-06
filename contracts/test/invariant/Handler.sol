@@ -50,7 +50,8 @@ contract Handler is SigHelpers {
     uint256 internal constant A_GUARDIAN_PAUSE = 20;
     uint256 internal constant A_CLAIM_TIMEOUT = 21;
     uint256 internal constant A_SET_DISPUTE_TIMEOUT = 22;
-    uint256 public constant A_COUNT = 23;
+    uint256 internal constant A_DISPUTE_SIG = 23; // disputeOfframpWithSig (relayed, user-signed)
+    uint256 public constant A_COUNT = 24;
 
     ScanPayVault public vault;
     MockPermitToken public token;
@@ -100,8 +101,8 @@ contract Handler is SigHelpers {
     bool public badCompletion; // completion outside [lockedAt + delay, reclaimableAt)
     bool public badSweep; // sweepSurplus changed escrowed/held/pool or paid the wrong amount
     bool public badRule; // anything that must have reverted but succeeded, or a timing rule broken
-    uint256[23] public calls;
-    uint256[23] public succ;
+    uint256[24] public calls;
+    uint256[24] public succ;
 
     struct Pack {
         ScanPayVault.OfframpIntent it;
@@ -398,6 +399,93 @@ contract Handler is SigHelpers {
             cnt[id][C_DISPUTE]++;
             _apply(id, COMPLETED, DISPUTED);
         } catch {}
+    }
+
+    function _actorIndex(address u) internal view returns (uint256) {
+        for (uint256 i; i < 3; i++) {
+            if (actors[i] == u) return i;
+        }
+        return 0;
+    }
+
+    /// @dev Relayed dispute: a random caller submits the offramp user's EIP-712 DisputeIntent signature.
+    /// modeSeed % 8: 0-3 honest signature with a valid deadline (3 first warps to the last valid second);
+    /// 4 expired deadline; 5 signed by a foreign key; 6 submitted at/after the dispute window; 7 signed deadline
+    /// differs from the submitted one. Only the honest, in-window, COMPLETED cases may succeed, and they must.
+    struct Relayed {
+        bytes32 id;
+        address user;
+        address caller;
+        uint256 mode;
+        bool mustSucceed;
+        uint64 submitted;
+        bytes sig;
+        uint256 expectedDeadline;
+        uint256 callerBefore;
+        uint256 userBefore;
+        uint256 vaultBefore;
+    }
+
+    function disputeWithSig(uint256 idSeed, uint256 modeSeed) public {
+        calls[A_DISPUTE_SIG]++;
+        (bool ok, bytes32 id) = _pick(idSeed, COMPLETED);
+        if (!ok) return;
+        Relayed memory r = _prepRelayed(id, modeSeed);
+        vm.prank(r.caller);
+        try vault.disputeOfframpWithSig(id, r.submitted, r.sig) {
+            succ[A_DISPUTE_SIG]++;
+            _afterRelayed(r);
+        } catch {
+            // an honest, in-window dispute must never be rejected (pause does not block it)
+            if (r.mustSucceed) badRule = true;
+        }
+    }
+
+    function _prepRelayed(bytes32 id, uint256 modeSeed) internal returns (Relayed memory r) {
+        r.id = id;
+        r.user = idUser[id];
+        r.mode = modeSeed % 8;
+        bool wasCompleted = lastStatus[id] == COMPLETED;
+        if (wasCompleted) {
+            (,,, uint256 rel0) = _dl(id); // release time while COMPLETED
+            if (r.mode == 3 && rel0 > block.timestamp + 1) _warpTo(rel0 - 1);
+            else if (r.mode == 6) _warpTo(rel0);
+        }
+        (,,, uint256 rel) = _dl(id);
+        r.mustSucceed = wasCompleted && block.timestamp < rel && r.mode <= 3;
+        uint64 signedDeadline = r.mode == 4
+            ? uint64(block.timestamp - 1)
+            : uint64(block.timestamp + ((modeSeed >> 8) % 3) * 1 hours);
+        uint256 ai = _actorIndex(r.user);
+        uint256 pk = actorPks[ai];
+        if (r.mode == 5) pk = (modeSeed >> 16) % 2 == 0 ? 0xBAD : actorPks[(ai + 1) % 3];
+        r.sig = _signDispute(pk, id, r.user, signedDeadline);
+        r.submitted = r.mode == 7 ? signedDeadline + 1 : signedDeadline;
+        address[9] memory pool = [relayer, stranger, settler, owner, arbiter, guardian, actors[0], actors[1], actors[2]];
+        r.caller = pool[(modeSeed >> 24) % 9];
+        r.expectedDeadline = block.timestamp + vault.disputeTimeout();
+        r.callerBefore = token.balanceOf(r.caller);
+        r.userBefore = token.balanceOf(r.user);
+        r.vaultBefore = token.balanceOf(address(vault));
+    }
+
+    function _afterRelayed(Relayed memory r) internal {
+        if (!r.mustSucceed) badRule = true; // expired / foreign signer / outside window / wrong status
+        idDeadline[r.id] = r.expectedDeadline; // same ghost snapshot as a direct dispute
+        (,,, uint256 dl) = _dl(r.id);
+        if (dl != r.expectedDeadline) badRule = true;
+        // the dispute moves no tokens: neither the submitter, the user nor the vault balance changes
+        if (
+            token.balanceOf(r.caller) != r.callerBefore || token.balanceOf(r.user) != r.userBefore
+                || token.balanceOf(address(vault)) != r.vaultBefore
+        ) badRule = true;
+        cnt[r.id][C_DISPUTE]++;
+        _apply(r.id, COMPLETED, DISPUTED);
+    }
+
+    function _signDispute(uint256 pk, bytes32 id, address usr, uint64 deadline) internal view returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, vault.hashDispute(id, usr, deadline));
+        return abi.encodePacked(r, s, v);
     }
 
     function release(uint256 idSeed) public {

@@ -425,6 +425,75 @@ abstract contract ForkBase is SigHelpers {
         assertEq(userAfterLock + AMOUNT, userStart);
     }
 
+    /// @dev The user's EIP-712 DisputeIntent signature (off-chain only).
+    function _disputeSig(bytes32 id, uint64 deadline) internal view returns (bytes memory) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(userPk, vault.hashDispute(id, user, deadline));
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev Zero-gas user end to end: relayed offramp -> settler completes -> the user only SIGNS a DisputeIntent and a
+    /// separate relayer submits it -> arbiter silent -> a third party claims the timeout and the user gets exactly
+    /// `amount` back. The user sends no transaction anywhere (nonce constant).
+    function test_Fork_ZeroGasUser_RelayedDisputeThenTimeoutClaim() public {
+        address third = makeAddr("fork-dispute-keeper-sig");
+        assertTrue(third != user && third != relayer, "keeper must differ from user and relayer");
+        assertTrue(relayer != user, "relayer must differ from user");
+        uint64 nonceBefore = vm.getNonce(user);
+        uint256 userStart = tok.balanceOf(user);
+        if (_nativeIsToken()) {
+            // Arc: the token is the gas coin; the token view is the floor of the native balance.
+            assertEq(user.balance / 1e12, userStart, "arc: token balance is floor(native / 1e12)");
+        } else {
+            vm.deal(user, 0); // no gas token at all: the user cannot send a transaction
+            assertEq(user.balance, 0);
+        }
+        uint256 nativeStart = user.balance;
+
+        // relayed offramp (permit + intent signed off-chain), then the settler completes
+        _lockComplete(ID1);
+        assertEq(vm.getNonce(user), nonceBefore, "user sent no tx for the offramp");
+        assertEq(tok.balanceOf(user), userStart - AMOUNT, "lock debited exactly amount");
+        uint256 nativeAfterLock = user.balance;
+
+        // the user only signs the dispute intent
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        bytes memory sig = _disputeSig(ID1, deadline);
+        assertEq(vm.getNonce(user), nonceBefore, "signing the dispute sent no tx");
+
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit ScanPayVault.OfframpDisputed(ID1, user, AMOUNT);
+        vm.prank(relayer);
+        vault.disputeOfframpWithSig(ID1, deadline, sig);
+
+        assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.DISPUTED));
+        assertEq(vault.heldTotal(), AMOUNT, "disputed funds stay held");
+        assertEq(user.balance, nativeAfterLock, "dispute cost the user no gas");
+        assertEq(vm.getNonce(user), nonceBefore, "user sent no tx for the dispute");
+        uint256 dl = _releasableAt(ID1);
+        assertEq(dl, block.timestamp + vault.disputeTimeout(), "deadline = dispute time + disputeTimeout");
+
+        // arbiter never answers; past the timeout a third party triggers the refund
+        vm.warp(dl);
+        uint256 thirdBefore = tok.balanceOf(third);
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit ScanPayVault.DisputeTimedOut(ID1, user, AMOUNT);
+        vm.prank(third);
+        vault.claimDisputeTimeout(ID1);
+
+        assertEq(tok.balanceOf(user), userStart, "user receives exactly amount back");
+        if (_nativeIsToken()) {
+            assertEq(user.balance - nativeAfterLock, AMOUNT * 1e12, "arc: native delta is exactly amount * 1e12");
+            assertEq(user.balance, nativeStart, "arc: native balance fully restored, dust intact");
+        } else {
+            assertEq(user.balance, 0, "user still has no native gas token");
+        }
+        assertEq(tok.balanceOf(third), thirdBefore, "keeper receives nothing");
+        assertEq(tok.balanceOf(address(vault)), 0, "vault emptied");
+        assertEq(vault.heldTotal(), 0);
+        assertEq(uint8(_status(ID1)), uint8(ScanPayVault.Status.REVERSED));
+        assertEq(vm.getNonce(user), nonceBefore, "the user sent no transaction anywhere in the flow");
+    }
+
     function test_Fork_WrongVersionPermitMakesOfframpRevert() public {
         ScanPayVault.OfframpIntent memory it = _intent(ID1);
         bytes memory sig = _signIntent(vault, userPk, it);

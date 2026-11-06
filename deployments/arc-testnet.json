@@ -3,7 +3,7 @@
   "chainId": 5042002,
   "rpc": "https://rpc.testnet.arc.io",
   "explorer": "https://explorer.testnet.arc.io",
-  "vault": "0xef2b4bfdf555f38fe2579e1e283f0d551175bd2b",
+  "vault": "0x878734374e6131fceeeb83fa8605ab49f4d21836",
   "token": {
     "symbol": "USDC",
     "address": "0x3600000000000000000000000000000000000000",
@@ -29,13 +29,20 @@
     "maxOfframpAmount": "100000000",
     "dailyEmitCap": "1000000000"
   },
-  "contractCommit": "1b82e62",
-  "deployTx": "0xb015f9b935604bbfeea68961835481b2afdebbdf27132411b9f1d396bd6750f4",
-  "deployedBy": "Arc Studio (ERC-4337 handleOps from platform account 0xDEa3556040658885B0Ac5Bb930F0B7e2f52DBFBC; no role in the vault)",
+  "contractCommit": "C1 fix (disputeOfframpWithSig) on top of 1b82e62",
+  "deployTx": "0x9a277bc17b5a4a9f3e600d7f2047a8bae5676084e80afb2f4d016a7ea731d29c",
+  "deployedBy": "Arc Studio (ERC-4337 handleOps from platform account 0x99a29Bff54D34711aE80Dd569eA48A3E3e96c743; no role in the vault)",
   "verified": true,
-  "previous": {
-    "vault": "0x1203a10706290d5a3c62bd99d10186d909e89e39",
-    "note": "old API (string qrText, no quoteSig); superseded, pool 0",
-    "smokeLog": "deployments/arc.smoke.log"
-  }
+  "previous": [
+    {
+      "vault": "0xef2b4bfdf555f38fe2579e1e283f0d551175bd2b",
+      "deployTx": "0xb015f9b935604bbfeea68961835481b2afdebbdf27132411b9f1d396bd6750f4",
+      "note": "security-review version without relayed disputes (C1); superseded, pool 0"
+    },
+    {
+      "vault": "0x1203a10706290d5a3c62bd99d10186d909e89e39",
+      "note": "old API (string qrText, no quoteSig); superseded, pool 0",
+      "smokeLog": "deployments/arc.smoke.log"
+    }
+  ]
 }
