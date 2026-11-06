@@ -129,6 +129,7 @@ class Settings:
     rate_limit_per_min: int = field(default_factory=lambda: _env_int("RATE_LIMIT_PER_MIN", 30))
     expose_payee_by_id: bool = field(default_factory=lambda: _env_bool("EXPOSE_PAYEE_BY_ID", False))
     admin_token: str = field(default_factory=lambda: os.environ.get("ADMIN_TOKEN") or "")
+    view_token_secret: str = field(default_factory=lambda: os.environ.get("VIEW_TOKEN_SECRET") or "")
     collect_upi_id: str = field(default_factory=lambda: os.environ.get("COLLECT_UPI_ID") or "rupeerail@okaxis")
     workers: bool = field(default_factory=lambda: _env_bool("WORKERS", True))
     dry_run: bool = field(default_factory=lambda: _env_bool("DRY_RUN", False))
