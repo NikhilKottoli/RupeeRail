@@ -7,6 +7,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import cv2
 import pytest
 
 from app.payment.flow import NO_PERMIT, Observation, PaymentFlow
@@ -16,9 +17,19 @@ from app.signers.circle_cli import CircleCliSigner, CircleSignerError
 from app.signers.local_key import LocalKeySigner
 
 ROOT = Path(__file__).resolve().parents[2]
-QR_IMAGE = (ROOT / "apps/mock-store/upi.png").read_bytes()
-QR_TEXT = "upi://pay?pa=vatsalgandhi239@okicici&pn=Vatsal%20Gandhi&aid=uGICAgMDu9M3OUg"
-PAYEE = "vatsalgandhi239@okicici"
+QR_TEXT = "upi://pay?pa=teststore@okicici&pn=Test%20Store&aid=testaid123"
+
+
+def make_qr_image(text: str) -> bytes:
+    """A QR as a page screenshot would show it, made here so the tests need no image file."""
+    modules = cv2.QRCodeEncoder.create().encode(text)
+    big = cv2.resize(modules, None, fx=8, fy=8, interpolation=cv2.INTER_NEAREST)
+    framed = cv2.copyMakeBorder(big, 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=255)
+    return cv2.imencode(".png", framed)[1].tobytes()
+
+
+QR_IMAGE = make_qr_image(QR_TEXT)
+PAYEE = "teststore@okicici"
 WALLET = "0x179dfbc07b23541849a2cb6d38d991d9ec7cda88"
 VAULT = "0x878734374e6131FCeEEB83FA8605Ab49f4D21836"
 TOKEN = "0x3600000000000000000000000000000000000000"
@@ -33,7 +44,7 @@ def make_quote(wallet=WALLET, inr="100", payee=PAYEE, **over):
     intent = {"id": "0x" + "7a" * 32, "user": wallet, "amount": "10106", "inrPaise": inr, "rateE6": "98960000",
               "qrCommitment": "0x" + "ab" * 32, "deadline": str(NOW + 90)}
     q = {
-        "id": intent["id"], "intent": intent, "viewToken": "vt", "payee": {"upiId": payee, "name": "Vatsal Gandhi"},
+        "id": intent["id"], "intent": intent, "viewToken": "vt", "payee": {"upiId": payee, "name": "Test Store"},
         "display": {"amount": "0.010106", "symbol": "USDC", "rate": "98.96", "marketRate": "99.76"},
         "signing": {
             "intent": {"domain": dict(CHAIN["vaultDomain"]), "primaryType": "OfframpIntent", "message": dict(intent),
@@ -104,7 +115,7 @@ def test_reads_the_real_qr_image_with_its_logo():
 
 def test_static_qr_has_no_amount_like_a_real_merchant():
     payment = parse_upi(QR_TEXT)
-    assert payment.upi_id == PAYEE and payment.name == "Vatsal Gandhi" and payment.amount_paise is None
+    assert payment.upi_id == PAYEE and payment.name == "Test Store" and payment.amount_paise is None
 
 
 @pytest.mark.parametrize("text,paise", [
@@ -241,10 +252,10 @@ def test_a_qr_page_can_use_the_total_from_the_review_page():
 
 
 def test_a_qr_amount_can_stand_in_for_a_missing_total_within_the_limit():
-    ok = "upi://pay?pa=vatsalgandhi239@okicici&am=1.00"
+    ok = "upi://pay?pa=teststore@okicici&am=1.00"
     result, backend, _, _ = run(observation=Observation(URL, ok, None))
     assert result.status == "COMPLETED" and backend.quotes[0][2] == "1.00"
-    high = "upi://pay?pa=vatsalgandhi239@okicici&am=2.00"
+    high = "upi://pay?pa=teststore@okicici&am=2.00"
     assert run(observation=Observation(URL, high, None))[0].status == "REFUSED"
 
 
