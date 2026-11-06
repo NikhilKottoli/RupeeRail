@@ -24,8 +24,8 @@ import { createPublicClient, createWalletClient, http, parseAbi, toHex, type Hex
 import { mnemonicToAccount, privateKeyToAccount, type HDAccount, type PrivateKeyAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import {
-  assertEstimateSafe, createArcSwapper, EURC_ADDRESS, gasFeeText, minOutOf, readEurcBalance, safeExplorerUrl,
-  shouldOfferSwap, sizeSwap, unitsFromDecimal, unitsToDecimal,
+  assertEstimateSafe, createArcSwapper, EURC_ADDRESS, gasFeeText, gasFeeUnits, minOutOf, readEurcBalance, requiredOut,
+  safeExplorerUrl, shouldOfferSwap, sizeSwap, unitsFromDecimal, unitsToDecimal,
 } from "../../apps/web/src/lib/swap";
 import type { Eip1193Provider } from "../../apps/web/src/lib/wallet";
 
@@ -219,8 +219,10 @@ async function swapForPayment(provider: Eip1193Provider, address: Hex, inr: stri
       const estimate = await kit.estimate(amountIn);
       assertEstimateSafe(estimate, address);
       const minOut = minOutOf(estimate);
-      log(`  estimate ${unitsToDecimal(amountIn)} EURC → ≥ ${unitsToDecimal(minOut)} USDC (expected ${estimate.estimatedOutput?.amount})`);
-      return { estimate, minOut };
+      const gasFee = gasFeeUnits(estimate);
+      log(`  estimate ${unitsToDecimal(amountIn)} EURC → ≥ ${unitsToDecimal(minOut)} USDC (expected ${estimate.estimatedOutput?.amount}) · ` +
+        `needs ≥ ${unitsToDecimal(requiredOut(required - balance, gasFee))} incl. gas`);
+      return { estimate, minOut, gasFee };
     },
   });
   log(`dialog: Swap ${unitsToDecimal(sized.amountIn)} EURC → at least ${unitsToDecimal(sized.quote.minOut)} USDC · ` +

@@ -27,6 +27,8 @@ const BUFFER_EXTRA = 50_000n;
 const BUMP_NUMERATOR = 102n;
 const BUMP_DENOMINATOR = 100n;
 export const MAX_SIZING_TRIES = 3;
+/** Gas set aside when an estimate doesn't report its network fee in USDC: 0.05 USDC. */
+export const GAS_RESERVE = 50_000n;
 
 /** The swap card is for the Arc vault only. Circle Swap doesn't cover Whitechain. */
 export function shouldOfferSwap(chain: { chainId: number }, tooLow: boolean): boolean {
@@ -45,6 +47,7 @@ export const MSG_GENERIC = "The swap couldn't be completed. Please try again.";
 
 export const ceilDiv = (a: bigint, b: bigint): bigint => (a + b - 1n) / b;
 const minBig = (a: bigint, b: bigint): bigint => (a < b ? a : b);
+const maxBig = (a: bigint, b: bigint): bigint => (a > b ? a : b);
 
 /** Reads a decimal string such as "1.5" into base units. Extra digits are dropped, or rounded up with `ceil`. */
 export function unitsFromDecimal(value: string, decimals = SWAP_DECIMALS, mode: "floor" | "ceil" = "floor"): bigint {
@@ -77,6 +80,20 @@ export function minOutOf(estimate: Pick<SwapEstimate, "stopLimit">): bigint {
   return unitsFromDecimal(estimate.stopLimit.amount, SWAP_DECIMALS, "floor");
 }
 
+/**
+ * The swap's network fee in USDC base units, rounded up. Null when the estimate has no gas entry, or reports
+ * it in another token, so the caller falls back to GAS_RESERVE.
+ */
+export function gasFeeUnits(estimate: Pick<SwapEstimate, "fees">): bigint | null {
+  const fee = estimate.fees?.find((f) => f.type === "gas");
+  if (!fee?.amount || String(fee.token).toUpperCase() !== "USDC") return null;
+  try {
+    return unitsFromDecimal(fee.amount, SWAP_DECIMALS, "ceil");
+  } catch {
+    return null;
+  }
+}
+
 export type SizingErrorCode = "NOT_ENOUGH_EURC" | "NO_QUOTE" | "NO_SHORTFALL";
 
 export class SwapSizingError extends Error {
@@ -94,16 +111,25 @@ export interface SizedSwap<T> {
   estimates: number;
 }
 
+/** What a sized swap must return at least: the shortfall plus the swap's own gas, which comes out of the same USDC. */
+export function requiredOut(shortfall: bigint, gasFee: bigint | null | undefined): bigint {
+  return shortfall + (gasFee ?? GAS_RESERVE);
+}
+
 /**
  * Works out how much EURC to sell.
  *
- *  1. Aim for `targetOut = shortfall x 1.03 + 0.05 USDC`.
+ * The swap's network fee is paid in USDC from the same balance the payment uses, so after the swap the wallet holds
+ * `balance + out - gasFee`. A swap is therefore accepted only when its minimum output covers `shortfall + gasFee`
+ * (the estimate's USDC gas fee, or GAS_RESERVE when it reports none).
+ *
+ *  1. Aim for `targetOut = max(shortfall x 1.03 + 0.05 USDC, shortfall + gasFee)`.
  *  2. Probe once, take the rate from the MINIMUM output (the stop limit), and size `amountIn` from it.
- *  3. Re-estimate. Accept only if the minimum output covers the whole shortfall. Otherwise add 2% and retry,
+ *  3. Re-estimate. Accept only if the minimum output covers `shortfall + gasFee`. Otherwise add 2% and retry,
  *     up to 3 tries.
- *  4. `amountIn` never exceeds the EURC balance. If even the whole balance can't cover the shortfall, stop.
+ *  4. `amountIn` never exceeds the EURC balance. If even the whole balance can't cover it, stop.
  */
-export async function sizeSwap<T extends { minOut: bigint }>(opts: {
+export async function sizeSwap<T extends { minOut: bigint; gasFee?: bigint | null }>(opts: {
   shortfall: bigint;
   eurcBalance: bigint;
   estimate: (amountIn: bigint) => Promise<T>;
@@ -112,19 +138,19 @@ export async function sizeSwap<T extends { minOut: bigint }>(opts: {
   if (shortfall <= 0n) throw new SwapSizingError("NO_SHORTFALL");
   if (eurcBalance <= 0n) throw new SwapSizingError("NOT_ENOUGH_EURC");
 
-  const targetOut = swapTarget(shortfall);
-  // EURC and USDC are close to 1:1, so the target itself is a fair first guess for the probe.
-  const probeIn = minBig(targetOut, eurcBalance);
+  // EURC and USDC are close to 1:1, so the buffered target is a fair first guess for the probe.
+  const probeIn = minBig(swapTarget(shortfall), eurcBalance);
   const probe = await estimate(probeIn);
   let estimates = 1;
   if (probe.minOut <= 0n) throw new SwapSizingError("NO_QUOTE");
+  const targetOut = maxBig(swapTarget(shortfall), requiredOut(shortfall, probe.gasFee));
 
   // rate = minOut / probeIn, so amountIn = targetOut / rate, rounded up.
   let amountIn = minBig(ceilDiv(targetOut * probeIn, probe.minOut), eurcBalance);
   for (let attempt = 1; attempt <= MAX_SIZING_TRIES; attempt++) {
     const quote = amountIn === probeIn ? probe : await estimate(amountIn);
     if (amountIn !== probeIn) estimates++;
-    if (quote.minOut >= shortfall) return { amountIn, quote, estimates };
+    if (quote.minOut >= requiredOut(shortfall, quote.gasFee)) return { amountIn, quote, estimates };
     if (amountIn >= eurcBalance) throw new SwapSizingError("NOT_ENOUGH_EURC");
     amountIn = minBig(bumpAmount(amountIn), eurcBalance);
   }

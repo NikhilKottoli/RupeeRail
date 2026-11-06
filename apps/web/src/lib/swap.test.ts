@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  assertEstimateSafe, bumpAmount, gasFeeText, MAX_SIZING_TRIES, MSG_GAS, MSG_LIQUIDITY, MSG_NOT_ENOUGH_EURC,
+  assertEstimateSafe, bumpAmount, GAS_RESERVE, gasFeeText, gasFeeUnits, MAX_SIZING_TRIES, requiredOut, MSG_GAS, MSG_LIQUIDITY, MSG_NOT_ENOUGH_EURC,
   observeProvider, safeExplorerUrl, shouldOfferSwap, sizeSwap, SwapSafetyError, SwapSizingError, swapErrorMessage,
   swapTarget, unitsFromDecimal, unitsToDecimal,
 } from "./swap";
@@ -106,13 +106,21 @@ describe("sizeSwap", () => {
       .rejects.toMatchObject({ code: "NOT_ENOUGH_EURC" });
   });
 
-  it("caps at the balance when the buffer doesn't fit but the shortfall still does", async () => {
+  it("caps at the balance when the buffer doesn't fit but shortfall + gas still does", async () => {
     const calls: bigint[] = [];
-    // Target 1.595 USDC needs about 1.477 EURC. The wallet has 1.4 EURC, which still returns 1.512 USDC >= 1.5.
-    const out = await sizeSwap({ shortfall: USDC(1.5), eurcBalance: USDC(1.4), estimate: pool(1.08, calls) });
+    // Target 1.595 USDC needs about 1.477 EURC. The wallet has 1.4 EURC, which returns 1.512 USDC >= 1.5 + 0.01 gas.
+    const estimate = async (amountIn: bigint) => ({ ...(await pool(1.08, calls)(amountIn)), gasFee: USDC(0.01) });
+    const out = await sizeSwap({ shortfall: USDC(1.5), eurcBalance: USDC(1.4), estimate });
     expect(out.amountIn).toBe(USDC(1.4));
-    expect(out.quote.minOut).toBeGreaterThanOrEqual(USDC(1.5));
+    expect(out.quote.minOut).toBeGreaterThanOrEqual(USDC(1.51));
     expect(Math.max(...calls.map(Number))).toBeLessThanOrEqual(Number(USDC(1.4)));
+  });
+
+  it("refuses at the balance cap when the whole balance covers the shortfall but not the gas", async () => {
+    // 1.4 EURC returns 1.512 USDC: enough for the 1.5 shortfall, not for 1.5 + 0.02 gas.
+    const estimate = async (amountIn: bigint) => ({ ...(await pool(1.08)(amountIn)), gasFee: USDC(0.02) });
+    await expect(sizeSwap({ shortfall: USDC(1.5), eurcBalance: USDC(1.4), estimate }))
+      .rejects.toMatchObject({ code: "NOT_ENOUGH_EURC" });
   });
 
   it("rejects an empty quote and a payment that needs no swap", async () => {
@@ -120,6 +128,57 @@ describe("sizeSwap", () => {
       .rejects.toMatchObject({ code: "NO_QUOTE" });
     await expect(sizeSwap({ shortfall: 0n, eurcBalance: USDC(5), estimate: pool(1) }))
       .rejects.toBeInstanceOf(SwapSizingError);
+  });
+});
+
+describe("gas is paid from the same USDC", () => {
+  it("does not accept a minimum output equal to the shortfall when the swap costs gas", async () => {
+    const calls: bigint[] = [];
+    const shortfall = USDC(1);
+    const gasFee = USDC(0.02);
+    // The probe looks generous (rate 1.1); the sized order comes back at exactly the shortfall, which the old rule
+    // accepted; the bumped one covers shortfall + gas.
+    const estimate = async (amountIn: bigint) => {
+      calls.push(amountIn);
+      const minOut = calls.length === 1 ? (amountIn * 11n) / 10n : calls.length === 2 ? shortfall : shortfall + gasFee;
+      return { minOut, gasFee };
+    };
+    const out = await sizeSwap({ shortfall, eurcBalance: USDC(100), estimate });
+    expect(calls).toHaveLength(3);
+    expect(calls[2]).toBe(bumpAmount(calls[1]));
+    expect(out.quote.minOut).toBe(shortfall + gasFee);
+  });
+
+  it("uses the 0.05 USDC reserve when an estimate reports no gas", async () => {
+    // 1.4 EURC returns 1.512 USDC, which is short of 1.5 + 0.05.
+    await expect(sizeSwap({ shortfall: USDC(1.5), eurcBalance: USDC(1.4), estimate: pool(1.08) }))
+      .rejects.toMatchObject({ code: "NOT_ENOUGH_EURC" });
+    const estimate = async (amountIn: bigint) => ({ ...(await pool(1.08)(amountIn)), gasFee: null });
+    await expect(sizeSwap({ shortfall: USDC(1.5), eurcBalance: USDC(1.4), estimate }))
+      .rejects.toMatchObject({ code: "NOT_ENOUGH_EURC" });
+    expect(requiredOut(USDC(1.5), null)).toBe(USDC(1.5) + GAS_RESERVE);
+    expect(requiredOut(USDC(1.5), undefined)).toBe(USDC(1.55));
+  });
+
+  it("aims for shortfall + gas when gas is bigger than the 3% + 0.05 buffer", async () => {
+    const calls: bigint[] = [];
+    // Shortfall 1 USDC: the buffer target is 1.08, but gas is 0.2, so it must aim for 1.2.
+    const estimate = async (amountIn: bigint) => ({ ...(await pool(1, calls)(amountIn)), gasFee: USDC(0.2) });
+    const out = await sizeSwap({ shortfall: USDC(1), eurcBalance: USDC(100), estimate });
+    expect(calls).toEqual([USDC(1.08), USDC(1.2)]);
+    expect(out.amountIn).toBe(USDC(1.2));
+    expect(out.quote.minOut).toBeGreaterThanOrEqual(USDC(1.2));
+  });
+
+  it("reads the gas fee only when it is reported in USDC, rounded up", () => {
+    expect(gasFeeUnits({ fees: [{ type: "provider", token: "EURC", amount: "0.0002" }, { type: "gas", token: "USDC", amount: "0.017489471475" }] } as never)).toBe(17_490n);
+    expect(gasFeeUnits({ fees: [{ type: "gas", token: "usdc", amount: "0.003" }] } as never)).toBe(3_000n);
+    // A gas fee in another token can't be netted against the USDC balance, so the caller uses the reserve.
+    expect(gasFeeUnits({ fees: [{ type: "gas", token: "EURC", amount: "0.003" }] } as never)).toBeNull();
+    expect(gasFeeUnits({ fees: [{ type: "gas", token: "USDC", amount: null }] } as never)).toBeNull();
+    expect(gasFeeUnits({ fees: [{ type: "gas", token: "USDC", amount: "n/a" }] } as never)).toBeNull();
+    expect(gasFeeUnits({ fees: [{ type: "provider", token: "EURC", amount: "0.0002" }] } as never)).toBeNull();
+    expect(gasFeeUnits({} as never)).toBeNull();
   });
 });
 

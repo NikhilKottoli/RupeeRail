@@ -15,7 +15,7 @@ import type { SwapEstimate, SwapResult } from "@circle-fin/swap-kit";
 import { useEffect, useRef, useState } from "react";
 import type { ChainInfo } from "../lib/api";
 import {
-  assertEstimateSafe, createArcSwapper, gasFeeText, minOutOf, readEurcBalance, safeExplorerUrl, sizeSwap,
+  assertEstimateSafe, createArcSwapper, gasFeeText, gasFeeUnits, minOutOf, readEurcBalance, safeExplorerUrl, sizeSwap,
   swapErrorMessage, unitsToDecimal, type ArcSwapper,
 } from "../lib/swap";
 import { ensureChain, type Eip1193Provider } from "../lib/wallet";
@@ -98,7 +98,7 @@ export default function SwapCard({
         estimate: async (amountIn) => {
           const estimate = await kit.estimate(amountIn);
           assertEstimateSafe(estimate, address);
-          return { estimate, minOut: minOutOf(estimate) };
+          return { estimate, minOut: minOutOf(estimate), gasFee: gasFeeUnits(estimate) };
         },
       });
       swapper.current = kit;
