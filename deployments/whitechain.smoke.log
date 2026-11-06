@@ -1,0 +1,58 @@
+=== ScanPayVault live smoke test · whitechain (chain 1874) · 2026-11-06T06:43:14Z ===
+vault  https://explorer.testnet.whitechain.io/address/0x6f89445d0CD31C26D091Bc47F6C5566E1fBF5982
+token  0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7 (Tether USD, permit domain v1) · wallet 0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1
+start: wallet token 21686835 (base units) · native 1.178225574984674448
+[0] deployment config
+  ✅ owner = wallet
+  ✅ settler = wallet
+  ✅ token = 0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7
+  ✅ decimals = 6, completeDelay = 15 s
+  ↳ setLimits(max 11 tokens, 20 tokens/day)  gas=36706  https://explorer.testnet.whitechain.io/tx/0x32c9e2e62cf6cb8a15b53dafc6300ab1b76ea83a66590f0608eaabb4ba1246dc
+  ✅ limits applied
+  ✅ setLimits by a stranger → reverts with OwnableUnauthorizedAccount
+[1] offramp A (valid UPI QR), gasless-style permit + intent → LOCKED
+  ↳ offramp A  gas=253308  https://explorer.testnet.whitechain.io/tx/0xcc55de0001ad009c0fcd94ad2a98e86f10affa304822f9aa81065ea7ffd3e7e8
+  ✅ status = LOCKED
+  ✅ wallet debited exactly 0.1 token
+  ✅ OfframpLocked event carries the exact raw qrText
+  ✅ stored qrHash = keccak256(qrText)
+  ✅ replay the same signed intent → reverts with OfframpIdUsed
+  ✅ invariant: vault balance 100000 ≥ escrow 100000 + pool 0
+[2] completeOfframp before 15 s must fail
+  ✅ complete at t < 15 s → reverts with TooEarly
+  ✅ complete by a stranger → reverts with UnauthorizedSettler
+  ✅ reclaim before 24 h → reverts with TooEarly
+[3] wait for lockedAt + 15 s, then complete → COMPLETED
+  ↳ completeOfframp A  gas=66710  https://explorer.testnet.whitechain.io/tx/0x20cf37cddc00c79d24fc68616c5ec67dcd07d62e80bc0f059324499a4c5277d4
+  ✅ status = COMPLETED
+  ✅ escrow moved to pool (+0.1)
+  ✅ invariant: vault balance 100000 ≥ escrow 0 + pool 100000
+[4] reverseOfframp A within 24 h → REVERSED, paid back to the original user
+  ↳ reverseOfframp A  gas=59350  https://explorer.testnet.whitechain.io/tx/0xae85b6f1408ffa5f8af74c37ae7068b9262bb10b653128393ef4f833bc74c22d
+  ✅ status = REVERSED
+  ✅ original user got 0.1 back
+  ✅ reverse twice → reverts with InvalidStatus
+  ✅ invariant: vault balance 0 ≥ escrow 0 + pool 0
+[5] offramp B (bad QR) → refundOfframp(INVALID_QR) → REFUNDED
+  ↳ offramp B  gas=235384  https://explorer.testnet.whitechain.io/tx/0x7506507fc2061ce32ea410e8ace67c4c20e3b34d0f272bd6893b34d448a8bb6e
+  ↳ refundOfframp B, reason 1 INVALID_QR  gas=56594  https://explorer.testnet.whitechain.io/tx/0x50e46895e223336d3ae5e35e1673cdd7686da9e88e0695fe5575474ad368c099
+  ✅ status = REFUNDED
+  ✅ user balance fully restored
+  ✅ complete after refund → reverts with InvalidStatus
+  ✅ invariant: vault balance 0 ≥ escrow 0 + pool 0
+[6] pool: fundPool → onramp → emitPayment → withdrawPool
+  ↳ approve vault 0.2  gas=53376  https://explorer.testnet.whitechain.io/tx/0x456e4b768fa5d41690c403d31d313a884a385a3db1bfc18c6cbeebd5d3397b8b
+  ↳ fundPool 0.2  gas=98141  https://explorer.testnet.whitechain.io/tx/0xb577f90924415a08049a66aa3380b52ea73df33355c695d7891e796aa3809a92
+  ↳ onramp 0.1 for ₹10  gas=109740  https://explorer.testnet.whitechain.io/tx/0xacc9bc3b0c25136c6fa62743efe768b93a516d14943827b96c872f527f72afe1
+  ✅ onramp paid 0.1 to the wallet
+  ✅ onramp with the same orderId → reverts with OnrampAlreadyPaid
+  ✅ onramp larger than the pool → reverts with InsufficientPoolBalance
+  ↳ emitPayment 0.05  gas=68877  https://explorer.testnet.whitechain.io/tx/0x6a52165064a9a09b824acc87c315c2de1816f3409bb8ef08191053966fd9bb5c
+  ✅ daily cap used: 0.15 of 20
+  ✅ withdrawPool beyond pool (escrow untouchable) → reverts with InsufficientPoolBalance
+  ↳ withdrawPool remaining 50000  gas=49106  https://explorer.testnet.whitechain.io/tx/0xfd2cdeb8036b7ab749632545f5303938bbe95f1f87a88967d9cc67b6a8c14aef
+  ✅ pool = 0 and escrow = 0
+  ✅ invariant: vault balance 0 ≥ escrow 0 + pool 0
+=== end: wallet token 21686835 → 21686835 · 11 txs · gas 0.005436460001087292 native ===
+  ✅ token-neutral: every token came back (gas aside)
+=== RESULT: 34 passed, 0 failed · log: /mnt/linux_data/RupeeRail/deployments/whitechain.smoke.log ===

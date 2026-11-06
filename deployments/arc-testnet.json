@@ -1,0 +1,23 @@
+{
+  "chain": "arc-testnet",
+  "chainId": 5042002,
+  "rpc": "https://rpc.testnet.arc.io",
+  "explorer": "https://explorer.testnet.arc.io",
+  "vault": "0x1203a10706290d5a3c62bd99d10186d909e89e39",
+  "token": {
+    "symbol": "USDC",
+    "address": "0x3600000000000000000000000000000000000000",
+    "decimals": 6,
+    "permitDomain": {
+      "name": "USDC",
+      "version": "2"
+    }
+  },
+  "owner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+  "settler": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+  "paymaster": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+  "deployTx": "0x17ae5edd3925d55ee1661aca01e6ef7d7399361a1143c9173ff772c5388ba26f",
+  "deployedBy": "Arc Studio (ERC-4337 handleOps from platform account 0xB029E8EAee8F51c8B6feB933832F8052a6c9Dc4b)",
+  "verified": true,
+  "bytecodeCheck": "executable code identical to local build; constructor args verified; only CBOR metadata differs"
+}
