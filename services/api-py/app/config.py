@@ -99,6 +99,11 @@ def load_chains(enabled: list[str] | None = None) -> dict[str, ChainConfig]:
 
 
 def _default_payout_command() -> str:
+    # Dev/prod: APP_ENV=prod runs the RazorpayX rail; dev (the default) keeps the stub below. See app/environment.py.
+    from .environment import prod_payout_command
+
+    if (prod := prod_payout_command()) is not None:
+        return prod
     return f"{shlex.quote(sys.executable)} {shlex.quote(str(SERVICE_DIR / 'scripts' / 'dev_payout_stub.py'))}"
 
 
