@@ -286,12 +286,59 @@ test("an expired rate can't be signed, only refreshed", async ({ page }) => {
   expect(backend.quotes).toHaveLength(2);
 });
 
-test("too little balance blocks paying", async ({ page }) => {
+/** Answers the Arc RPC so the swap card's EURC balance read never leaves the test. */
+async function mockArcRpc(page: Page, eurcUnits: bigint) {
+  const calls: string[] = [];
+  await page.route("https://rpc.testnet.arc.io/**", async (route) => {
+    const body = route.request().postDataJSON();
+    const answer = (req: { id: number; method: string }) => {
+      calls.push(req.method);
+      const result = req.method === "eth_call" ? `0x${eurcUnits.toString(16).padStart(64, "0")}`
+        : req.method === "eth_chainId" ? "0x4cef52" : "0x0";
+      return { jsonrpc: "2.0", id: req.id, result };
+    };
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(Array.isArray(body) ? body.map(answer) : answer(body)) });
+  });
+  return calls;
+}
+
+test("too little USDC on Arc offers a swap from EURC and keeps Pay blocked", async ({ page }) => {
   await mockApi(page, { balance: "100" });
+  const rpcCalls = await mockArcRpc(page, 2_500_000n);
   await injectWallet(page, { key: KEY });
   await connect(page);
   await review(page);
-  await expect(page.getByText("doesn't have enough USDC")).toBeVisible();
+  await expect(page.getByText("This payment needs")).toBeVisible();
+  await expect(page.getByText("Your EURC: 2.5")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap EURC → USDC" })).toBeEnabled();
+  // The swap card replaces the generic warning on Arc.
+  await expect(page.getByText("doesn't have enough USDC")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Pay · rate held/ })).toBeDisabled();
+  expect(rpcCalls).toContain("eth_call");
+});
+
+test("too little USDC on Arc with no EURC disables the swap", async ({ page }) => {
+  await mockApi(page, { balance: "100" });
+  await mockArcRpc(page, 0n);
+  await injectWallet(page, { key: KEY });
+  await connect(page);
+  await review(page);
+  await expect(page.getByText("You don't have any EURC to swap.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap EURC → USDC" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Pay · rate held/ })).toBeDisabled();
+});
+
+test("too little USDT on Whitechain blocks paying, with no swap offered", async ({ page }) => {
+  await mockApi(page, { balance: "100" });
+  await injectWallet(page, { key: KEY });
+  await connect(page);
+  await enterLink(page);
+  await page.getByLabel("Amount").fill("25.50");
+  await page.getByRole("button", { name: /USDT · Whitechain/ }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Review payment" })).toBeVisible();
+  await expect(page.getByText("doesn't have enough USDT")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Swap EURC → USDC" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Pay · rate held/ })).toBeDisabled();
 });
 
