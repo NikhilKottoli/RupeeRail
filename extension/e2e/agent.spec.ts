@@ -67,13 +67,16 @@ async function runAgent(panel: Page, name: string, prompt: string, limit = "1", 
   await panel.getByRole("button", { name: "Run", exact: true }).click();
 }
 
+const SIDE_PANEL = { width: 400, height: 860 };
+
 const outcome = (panel: Page) => panel.locator("#outcome");
 const quotes = async (request: APIRequestContext) => (await (await request.get(`${FAKE}/__state`)).json()).quotes;
 
 test("choosing an agent and typing a prompt ends in a real result, from the page's own QR", async ({ panel, store, request }) => {
   await makeAgent(request, panel);
   const card = panel.locator(".agent-card", { hasText: "Chef" });
-  await expect(card).toContainText("2 USDC budget left");
+  await expect(card.locator(".amount")).toHaveText("2.00");
+  await expect(card.locator(".unit")).toHaveText("USDC left");
   await expect(card.locator(".avatar.colour-saffron img")).toHaveAttribute("src", "avatars/chef.svg");
   await runAgent(panel, "Chef", "Order a cutting chai");
 
@@ -107,8 +110,13 @@ test("choosing an agent and typing a prompt ends in a real result, from the page
   await expect(panel.locator("#history")).toContainText("Order a cutting chai");
   await expect(panel.locator("#history")).toContainText("Paid");
   await expect(panel.locator("#history")).toContainText("₹1");
-  await expect(panel.locator("#agent-wallet")).not.toContainText("2 USDC budget left");
-  if (process.env.E2E_SCREENSHOTS) await panel.screenshot({ path: "e2e/screenshots/agent.png" });
+  await expect(panel.locator("#agent-wallet .amount")).toHaveText("1.98"); // cut to two decimals, and never rounded up
+  await expect(panel.locator("#agent-wallet .budget-figure")).toHaveAttribute("title", "1.989894 USDC");
+  if (process.env.E2E_SCREENSHOTS) {
+    await panel.setViewportSize(SIDE_PANEL);
+    await panel.waitForTimeout(400);
+    await panel.screenshot({ path: "e2e/screenshots/agent.png", fullPage: true });
+  }
 });
 
 test("on-chain COMPLETED isn't reported as paid when the phone failed", async ({ panel, request }) => {
@@ -257,7 +265,7 @@ test("creating an agent from a template, choosing its avatar, editing and archiv
   // The new agent appears with its wallet and on-chain budget.
   await expect(panel.locator("#agent-name")).toHaveText("Sous Chef");
   await expect(panel.locator("#agent-avatar.colour-teal img")).toHaveAttribute("src", "avatars/scientist.svg");
-  await expect(panel.locator("#agent-wallet")).toContainText("5 USDC budget left", { timeout: 15_000 });
+  await expect(panel.locator("#agent-wallet")).toContainText("5.00 USDC budget left", { timeout: 15_000 });
   await expect(panel.getByLabel("Limit for this order (₹)")).toHaveValue("25");
   await expect(panel.getByRole("button", { name: "Run", exact: true })).toBeEnabled();
 
@@ -276,7 +284,7 @@ test("creating an agent from a template, choosing its avatar, editing and archiv
   await panel.getByRole("button", { name: "Edit agent" }).click();
   await panel.getByLabel("New budget (USDC)").fill("3");
   await panel.getByRole("button", { name: "Set budget" }).click();
-  await expect(panel.locator("#agent-wallet")).toContainText("3 USDC budget left", { timeout: 15_000 });
+  await expect(panel.locator("#agent-wallet")).toContainText("3.00 USDC budget left", { timeout: 15_000 });
 
   panel.on("dialog", (dialog) => void dialog.accept());
   await panel.getByRole("button", { name: "Edit agent" }).click();
@@ -294,9 +302,37 @@ test("two agents pay from two wallets, and only the one that paid loses budget",
   const [quote] = await quotes(request);
   expect(quote.user.toLowerCase()).toBe(barista.wallet.address.toLowerCase());
   await panel.reload();
-  await expect(panel.locator(".agent-card", { hasText: "Chef" })).toContainText("2 USDC budget left");
-  await expect(panel.locator(".agent-card", { hasText: "Barista" })).not.toContainText("2 USDC budget left");
-  if (process.env.E2E_SCREENSHOTS) await panel.screenshot({ path: "e2e/screenshots/home.png" });
+  await expect(panel.locator(".agent-card", { hasText: "Chef" }).locator(".amount")).toHaveText("2.00");
+  await expect(panel.locator(".agent-card", { hasText: "Barista" }).locator(".amount")).toHaveText("1.98");
+  await panel.setViewportSize(SIDE_PANEL); // only after the run: it resizes the whole window, including the store's tab
+
+  // A Material 3 Expressive list: the group's outer corners are round, and the corners between items aren't.
+  const radii = (card: string) => panel.locator(".agent-card", { hasText: card }).evaluate((e) => {
+    const style = getComputedStyle(e);
+    return [style.borderTopLeftRadius, style.borderBottomLeftRadius];
+  });
+  expect(await radii("Chef")).toEqual(["28px", "6px"]);
+  expect(await radii("Barista")).toEqual(["6px", "28px"]);
+
+  // The main action is short and centered, rather than a full-width bar.
+  const button = (await panel.getByRole("button", { name: "New agent" }).boundingBox())!;
+  expect(button.width).toBeLessThan(260);
+  expect(Math.abs(button.x + button.width / 2 - 200)).toBeLessThan(2);
+  if (process.env.E2E_SCREENSHOTS) {
+    await panel.waitForTimeout(400);
+    await panel.screenshot({ path: "e2e/screenshots/home.png" });
+    await panel.emulateMedia({ colorScheme: "dark" });
+    await panel.waitForTimeout(250);
+    await panel.screenshot({ path: "e2e/screenshots/home-dark.png" });
+    await panel.emulateMedia({ colorScheme: "light" });
+  }
+
+  // On the details page, Run and Edit agent sit side by side.
+  await panel.locator(".agent-card", { hasText: "Barista" }).click();
+  const run = (await panel.getByRole("button", { name: "Run", exact: true }).boundingBox())!;
+  const editAgent = (await panel.getByRole("button", { name: "Edit agent" }).boundingBox())!;
+  expect(Math.abs(run.y - editAgent.y)).toBeLessThan(2);
+  expect(editAgent.x).toBeGreaterThan(run.x + run.width - 1);
 });
 
 test("a rehearsal reaches the QR, then stops without quoting or paying", async ({ panel, store, request }) => {

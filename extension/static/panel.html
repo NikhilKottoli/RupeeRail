@@ -10,12 +10,23 @@
   <!-- Agents -->
   <section id="home-view">
     <header class="title">
-      <h1>Your agents</h1>
-      <p class="muted">Each one remembers what you tell it, and pays from its own wallet.</p>
+      <div class="title-text">
+        <h1>Your agents</h1>
+        <p class="muted">Each one remembers what you tell it, and pays from its own wallet.</p>
+      </div>
+      <div class="cluster" aria-hidden="true">
+        <span class="shape shape-a"></span>
+        <span class="shape shape-b"></span>
+        <span class="avatar colour-leaf bot-traveller"><img src="avatars/traveller.svg" alt=""></span>
+        <span class="avatar colour-rose bot-shopper"><img src="avatars/shopper.svg" alt=""></span>
+        <span class="avatar colour-teal bot-scientist"><img src="avatars/scientist.svg" alt=""></span>
+        <span class="avatar colour-saffron bot-chef"><img src="avatars/chef.svg" alt=""></span>
+        <span class="avatar colour-indigo bot-robot"><img src="avatars/robot.svg" alt=""></span>
+      </div>
     </header>
     <p id="home-error" class="note bad" hidden></p>
     <ul id="agents" class="cards" aria-label="Agents"></ul>
-    <button id="new-agent" type="button">New agent</button>
+    <button id="new-agent" type="button"><span class="plus" aria-hidden="true"></span>New agent</button>
   </section>
 
   <!-- One agent: type a prompt -->
@@ -37,9 +48,11 @@
       <label class="check"><input id="rehearse" type="checkbox"> Rehearse: browse only, and stop before ordering or paying</label>
       <p id="prompt-note" class="muted">It pays without asking, up to this limit. You can stop it at any time before it submits.</p>
       <p id="prompt-error" class="note bad" hidden></p>
-      <button id="run" type="submit">Run</button>
+      <div class="actions">
+        <button id="run" type="submit">Run</button>
+        <button id="edit-agent" class="secondary" type="button">Edit agent</button>
+      </div>
     </form>
-    <button id="edit-agent" class="secondary" type="button">Edit agent</button>
     <h2>History</h2>
     <ul id="history" class="history" aria-label="Past runs"></ul>
   </section>
