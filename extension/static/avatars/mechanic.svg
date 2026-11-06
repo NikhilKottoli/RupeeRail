@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Mechanic">
+  
+  <path d="M14 96c0-19 15-29 34-29s34 10 34 29z" fill="#35608a"/>
+  <rect x="41" y="58" width="14" height="14" rx="6" fill="#ad7449"/>
+  <circle cx="48" cy="44" r="20" fill="#c98d62"/>
+  
+  <circle cx="41" cy="44" r="2.4" fill="#2b2320"/><circle cx="55" cy="44" r="2.4" fill="#2b2320"/><path d="M41 52c2.5 3.5 11.5 3.5 14 0" fill="none" stroke="#2b2320" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M29 35c0-14 9-20 19-20s19 6 19 20z" fill="#e0a526"/><path d="M60 31h20c1 4-1 6-5 6H62z" fill="#c98a12"/>
+  <path d="M58 92l12-14m0 0c-2-4 1-8 6-7l-3 4 2 3 4-2c0 5-4 8-9 6z" fill="#cfd3d6" stroke="#8f979c" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

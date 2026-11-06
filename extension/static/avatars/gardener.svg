@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Gardener">
+  
+  <path d="M14 96c0-19 15-29 34-29s34 10 34 29z" fill="#7a5a3a"/>
+  <rect x="41" y="58" width="14" height="14" rx="6" fill="#8d5935"/>
+  <circle cx="48" cy="44" r="20" fill="#a86f47"/>
+  
+  <circle cx="41" cy="44" r="2.4" fill="#2b2320"/><circle cx="55" cy="44" r="2.4" fill="#2b2320"/><path d="M41 52c2.5 3.5 11.5 3.5 14 0" fill="none" stroke="#2b2320" stroke-width="2.4" stroke-linecap="round"/>
+  <ellipse cx="48" cy="29" rx="29" ry="6" fill="#e6c878"/><path d="M33 29c0-12 7-16 15-16s15 4 15 16z" fill="#efd78f"/><rect x="33" y="24" width="30" height="5" fill="#4f8f4a"/>
+  <path d="M68 92c-10-3-13-12-9-22 10 2 14 12 9 22z" fill="#4f8f4a"/><path d="M68 92c-3-7-5-12-9-22" fill="none" stroke="#2f6b2f" stroke-width="1.5"/>
+</svg>
