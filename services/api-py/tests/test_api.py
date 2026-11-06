@@ -512,3 +512,21 @@ def test_admin_reverse(env):
     assert_error(client.post(f"/admin/offramp/{id_}/reverse"), 401, "UNAUTHORIZED")
     r = client.post(f"/admin/offramp/{id_}/reverse", headers={"x-admin-token": "test-admin"})
     assert r.status_code == 200 and r.json()["result"] == "reversed" and chain.sent[0][0] == "reverseOfframp"
+
+
+def test_view_token_is_derived_from_the_id_when_a_secret_is_set(env):
+    from app.quote_service import derive_view_token
+    client, ctx, chain, user = env
+
+    # The same vector is in apps/upi-payer/tests/test_agent.py, so changing either side fails a test.
+    assert derive_view_token("test-secret", bytes.fromhex("ab" * 32)) == "d570cbe8bc6adfc240d6e7da47f5856e83789a36600820ee92eb1167c7aa1356"
+    assert derive_view_token("", bytes.fromhex("ab" * 32)) != derive_view_token("", bytes.fromhex("ab" * 32))  # random
+
+    ctx.settings.view_token_secret = "test-secret"
+    q = quote(client, user).json()
+    token = derive_view_token("test-secret", bytes.fromhex(q["id"][2:]))
+    assert q["viewToken"] == token
+    assert client.get(f"/offramp/{q['id']}", headers={"x-view-token": token}).json()["payee"]["upiId"] == "chaipoint@okaxis"
+    assert client.get(f"/offramp/{q['id']}", headers={"x-view-token": "0" * 64}).json()["payee"] is None
+    assert client.get(f"/offramp/{q['id']}").json()["payee"] is None
+

@@ -8,6 +8,8 @@ transaction is sent.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import secrets
 import time
 from decimal import ROUND_HALF_UP, Decimal
@@ -28,6 +30,16 @@ from .quote_math import format_paise, format_units, offramp_amount, offramp_rate
 from .store import Store
 
 DAY = 86_400
+
+
+def derive_view_token(secret: str, id_b: bytes) -> str:
+    """The quote's viewToken. With a shared secret, the payout agent can compute it from the event's id.
+
+    Without one, it stays random and only the /quote caller can read the payee.
+    """
+    if not secret:
+        return secrets.token_hex(16)
+    return hmac.new(secret.encode(), id_b, hashlib.sha256).hexdigest()
 
 
 def domains(cfg: ChainConfig) -> tuple[dict, dict]:
@@ -121,7 +133,7 @@ class QuoteService:
         # 4. sign hashIntent as the quote signer
         vd, pd = domains(cfg)
         quote_sig = "0x" + sign_digest_typed(self.signer, intent_typed_data(vd, intent)).hex()
-        view_token = secrets.token_hex(16)
+        view_token = derive_view_token(s.view_token_secret, id_b)
 
         self.store.insert_quote({
             "id": intent.id, "chain": chain, "user": user, "amount": str(amount), "inr_paise": inr_paise,
