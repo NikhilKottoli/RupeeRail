@@ -1,9 +1,9 @@
 """FastAPI app. `uv run uvicorn app.main:app --port 8788` (env WORKERS=0 to skip chain workers),
 or `uv run python -m app.main --port 8788 [--no-workers] [--dry-run]`.
 
-Background tasks: the FX poller (read-only; /quote needs it) unless FX=0. With workers on, the
-startup checks compare the vaults' onchain roles with our keys. Chain workers (listener, settler,
-keepers) are added on top of this.
+Background tasks (when workers are on): FX poller, one listener per chain, the settler loop and
+the keepers. The payout runner's boot recovery (DISPATCHING -> NEEDS_OPERATOR) runs first.
+The FX poller also runs with workers off (it is read-only and /quote needs it) unless FX=0.
 """
 
 from __future__ import annotations
@@ -77,12 +77,22 @@ def create_app(ctx: Any = None, *, workers: bool | None = None, fx: bool | None 
             tasks.append(asyncio.create_task(ctx.fx.run(), name="fx"))
         if run_workers:
             await startup_checks(ctx)
+            flagged = ctx.runner.recover()
+            if flagged:
+                log.error("payout recovery flagged %d payment(s) NEEDS_OPERATOR", len(flagged))
+            for k, lst in ctx.listeners.items():
+                tasks.append(asyncio.create_task(lst.run(), name=f"listener:{k}"))
+            tasks.append(asyncio.create_task(ctx.settler.run(ctx.settings.settler_tick_sec), name="settler"))
+            tasks.append(asyncio.create_task(ctx.keeper.run(ctx.settings.keeper_tick_sec), name="keepers"))
         try:
             yield
         finally:
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            for lst in ctx.listeners.values():
+                for t in list(lst.tasks):
+                    t.cancel()
             await ctx.fx.close()
             for c in ctx.clients.values():
                 close = getattr(c, "close", None)
@@ -125,7 +135,7 @@ def cli() -> None:
     ap = argparse.ArgumentParser(description="RupeeRail API")
     ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8788")))
-    ap.add_argument("--no-workers", action="store_true", help="API only: skip the startup chain checks")
+    ap.add_argument("--no-workers", action="store_true", help="API only: no listener/settler/keepers")
     ap.add_argument("--dry-run", action="store_true", help="simulate transactions but never broadcast")
     a = ap.parse_args()
     if a.no_workers:

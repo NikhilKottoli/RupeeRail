@@ -1,5 +1,4 @@
-"""HTTP routes: API contract v1. Read and quote endpoints: /health, /config, /account, /quote,
-GET /offramp/{id} and /offramps.
+"""HTTP routes: API contract v1 (HANDOFF-payment-cycle-api-metamask.md, sections 3.1-3.8).
 
 All integers in responses are decimal strings (except chainId inside EIP-712 domains, spreadBps
 and diagnostic ages, which the contract shows as numbers). Errors are {"error": CODE, "message"}.
@@ -18,6 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Header, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .common import ApiError
@@ -45,6 +45,34 @@ class PermitModel(BaseModel):
     v: Num
     r: str
     s: str
+
+
+class OfframpReq(BaseModel):
+    chain: str
+    intent: dict[str, Num]
+    userSig: str = Field(max_length=4096)
+    permit: PermitModel
+
+
+class DisputeReq(BaseModel):
+    chain: str
+    id: str
+    deadline: Num
+    userSig: str = Field(max_length=4096)
+
+
+class OnrampReq(BaseModel):
+    chain: str
+    wallet: str
+    inr: str | int | float
+
+
+class FiatReceivedReq(BaseModel):
+    bankRef: str | None = Field(default=None, max_length=256)
+
+
+class RefundReq(BaseModel):
+    reason: int = 4
 
 
 def ctx_of(request: Request):
@@ -110,6 +138,12 @@ def offramp_view(ctx, id_: str, p: dict | None, q: dict | None, *, view_token: s
     }
 
 
+def event_view(ctx, e: dict) -> dict:
+    cfg = ctx.chains.get(e["chain"])
+    return {"chain": e["chain"], "name": e["name"], "id": e.get("ref_id"), "block": str(e["block"]),
+            "txHash": e["tx"], "explorer": cfg.tx_url(e["tx"]) if cfg else None, "args": e["args"]}
+
+
 def chain_view(cfg) -> dict:
     vd, pd = domains(cfg)
     return {
@@ -142,6 +176,9 @@ async def health(request: Request) -> dict:
             "workers": ctx.settings.workers,
             "dryRun": ctx.settings.dry_run,
             "fx": ctx.fx.status(),
+            "listeners": {k: lst.status() for k, lst in ctx.listeners.items()},
+            "settlerLastError": ctx.settler.last_error,
+            "keeperLastError": ctx.keeper.last_error,
             "sseSubscribers": ctx.hub.subscribers,
             "onchainRoles": ctx.onchain_roles,
         },
@@ -192,6 +229,13 @@ async def post_quote(body: QuoteReq, request: Request) -> dict:
     return await ctx.quotes.quote(body.chain, body.user, body.inr, body.qrText)
 
 
+@router.post("/offramp")
+async def post_offramp(body: OfframpReq, request: Request) -> dict:
+    ctx = ctx_of(request)
+    ctx.limiter.check(f"offramp:{str(body.intent.get('user', '')).lower()}")
+    return await ctx.paymaster.submit(body.chain, body.intent, body.userSig, body.permit.model_dump())
+
+
 @router.get("/offramp/{id_}")
 async def get_offramp(id_: str, request: Request, refresh: bool = False, viewToken: str | None = None,
                       x_view_token: str | None = Header(default=None)) -> dict:
@@ -225,3 +269,102 @@ async def list_offramps(request: Request, user: str | None = None, chain: str | 
         items.append(offramp_view(ctx, p["id"], p, ctx.store.get_quote(p["id"])))
     return {"items": items}
 
+
+@router.post("/dispute")
+async def post_dispute(body: DisputeReq, request: Request) -> dict:
+    ctx = ctx_of(request)
+    ctx.limiter.check(f"dispute:{_client_ip(request)}")
+    return await ctx.disputes.relay(body.chain, body.id, body.deadline, body.userSig)
+
+
+# ---- events ---------------------------------------------------------------------------------
+
+@router.get("/events")
+async def list_events(request: Request, chain: str | None = None, id: str | None = None,
+                      limit: int = Query(100, ge=1, le=1000)) -> list[dict]:
+    ctx = ctx_of(request)
+    return [event_view(ctx, e) for e in ctx.store.list_events(chain=chain, ref_id=id, limit=limit)]
+
+
+@router.get("/events/stream")
+async def stream_events(request: Request, ping: float = 15.0) -> StreamingResponse:
+    """SSE: `event:` is the contract event name, `data:` the /events item; `ping` every 15 s."""
+    ctx = ctx_of(request)
+    q = ctx.hub.subscribe()
+
+    async def gen():
+        try:
+            yield "retry: 3000\n\n"
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    ev = await asyncio.wait_for(q.get(), timeout=ping)
+                except asyncio.TimeoutError:
+                    yield f"event: ping\ndata: {json.dumps({'t': str(int(time.time()))})}\n\n"
+                    continue
+                if ev.get("type") != "chain_event":
+                    continue  # internal notifications stay internal
+                data = {k: v for k, v in ev.items() if k != "type"}
+                yield f"event: {ev['name']}\ndata: {json.dumps(data, default=str)}\n\n"
+        finally:
+            ctx.hub.unsubscribe(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# ---- onramp + admin -------------------------------------------------------------------------
+
+def _require_admin(ctx, token: str | None) -> None:
+    if not ctx.settings.admin_token:
+        raise ApiError(503, "ADMIN_DISABLED", "ADMIN_TOKEN is not configured")
+    if token != ctx.settings.admin_token:
+        raise ApiError(401, "UNAUTHORIZED", "bad or missing x-admin-token")
+
+
+@router.post("/onramp")
+async def post_onramp(body: OnrampReq, request: Request) -> dict:
+    ctx = ctx_of(request)
+    ctx.limiter.check(f"onramp:{_client_ip(request)}")
+    return ctx.onramp.create(body.chain, body.wallet, body.inr)
+
+
+@router.get("/onramp/{order_id}")
+async def get_onramp(order_id: str, request: Request) -> dict:
+    ctx = ctx_of(request)
+    o = ctx.store.get_onramp(order_id)
+    if o is None:
+        raise ApiError(404, "UNKNOWN_ORDER", "unknown onramp order")
+    return ctx.onramp.view(o)
+
+
+@router.post("/admin/onramp/{order_id}/fiat-received")
+async def admin_fiat_received(order_id: str, request: Request, body: FiatReceivedReq | None = None,
+                              x_admin_token: str | None = Header(default=None)) -> dict:
+    ctx = ctx_of(request)
+    _require_admin(ctx, x_admin_token)
+    return await ctx.onramp.fiat_received(order_id, (body.bankRef if body else None))
+
+
+@router.post("/admin/offramp/{id_}/refund")
+async def admin_refund(id_: str, body: RefundReq, request: Request,
+                       x_admin_token: str | None = Header(default=None)) -> dict:
+    ctx = ctx_of(request)
+    _require_admin(ctx, x_admin_token)
+    p = ctx.store.get_payment(id_)
+    if p is None:
+        raise ApiError(404, "NOT_FOUND", "unknown offramp id")
+    if not 1 <= body.reason <= 4:
+        raise ApiError(400, "BAD_REQUEST", "reason must be 1-4")
+    return {"id": id_, "result": await ctx.settler.refund(p["chain"], id_, body.reason)}
+
+
+@router.post("/admin/offramp/{id_}/reverse")
+async def admin_reverse(id_: str, request: Request, x_admin_token: str | None = Header(default=None)) -> dict:
+    ctx = ctx_of(request)
+    _require_admin(ctx, x_admin_token)
+    p = ctx.store.get_payment(id_)
+    if p is None:
+        raise ApiError(404, "NOT_FOUND", "unknown offramp id")
+    return {"id": id_, "result": await ctx.settler.reverse(p["chain"], id_)}
