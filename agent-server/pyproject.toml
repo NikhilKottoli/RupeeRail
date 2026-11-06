@@ -1,0 +1,22 @@
+[project]
+name = "rupeerail-agent-server"
+version = "0.1.0"
+description = "The agent's payment path: read a UPI QR from a checkout page, verify the quote in code, sign, pay and report"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "eth-account>=0.13,<0.14",
+    "httpx>=0.27,<1",
+    "numpy>=2,<3",
+    "opencv-python-headless>=4.10,<5",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[dependency-groups]
+dev = ["pytest>=8,<9"]
+demo = ["playwright>=1.49,<2"]
