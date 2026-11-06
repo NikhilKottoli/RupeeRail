@@ -8,7 +8,8 @@
 Dev is exactly today's behaviour unless COLLECT_RAIL=razorpay opts in (test-mode keys). Prod refuses
 to start until its rails are implemented and configured (live keys need a current account and a
 business PAN), so a dev stand-in never runs there. The razorpay collect rail is checked in both
-environments: without keys or an https PUBLIC_BASE_URL the server won't start.
+environments: without its keys, or with a non-https PUBLIC_BASE_URL override, the server won't start.
+PUBLIC_BASE_URL defaults to the Azure host (config.AZURE_BASE_URL).
 """
 
 from __future__ import annotations

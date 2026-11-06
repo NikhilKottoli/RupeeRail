@@ -74,7 +74,6 @@ def test_prod_lists_everything_missing(monkeypatch):
     found = envmod.problems(use(monkeypatch, APP_ENV="prod"))
     for expected in ("PAYOUT_RAIL=razorpayx is declared but not implemented yet",
                      "RAZORPAY_API_KEY is not set", "RAZORPAY_WEBHOOK_SECRET is not set",
-                     "PUBLIC_BASE_URL is not set (the https URL Razorpay calls back, e.g. your ngrok URL)",
                      "COLLECT_UPI_ID is the placeholder rupeerail@okaxis",
                      "ADMIN_TOKEN is not set", "VIEW_TOKEN_SECRET is not set"):
         assert expected in found
@@ -90,12 +89,18 @@ def test_prod_fully_configured_is_blocked_only_by_the_unimplemented_payout_rail(
 
 def test_dev_razorpay_needs_keys_and_an_https_base_url(monkeypatch):
     found = envmod.problems(use(monkeypatch, COLLECT_RAIL="razorpay"))
-    assert found == sorted(["PUBLIC_BASE_URL is not set (the https URL Razorpay calls back, e.g. your ngrok URL)",
-                            "RAZORPAY_API_KEY is not set", "RAZORPAY_API_SECRET is not set",
+    assert found == sorted(["RAZORPAY_API_KEY is not set", "RAZORPAY_API_SECRET is not set",
                             "RAZORPAY_WEBHOOK_SECRET is not set"])
     assert envmod.problems(use(monkeypatch, COLLECT_RAIL="razorpay", **{**RAZORPAY, "PUBLIC_BASE_URL": "http://x"})) \
         == ["PUBLIC_BASE_URL must be an https:// URL"]
     assert envmod.problems(use(monkeypatch, COLLECT_RAIL="razorpay", **RAZORPAY)) == []
+
+
+def test_public_base_url_defaults_to_the_azure_host_and_can_be_overridden(monkeypatch):
+    s = use(monkeypatch)
+    assert s.public_base_url == s.web_app_url == "https://rupee-rail.indiasouthcentral.cloudapp.azure.com"
+    s = use(monkeypatch, PUBLIC_BASE_URL="https://x.ngrok-free.app/")
+    assert s.public_base_url == s.web_app_url == "https://x.ngrok-free.app"
 
 
 def test_razorpay_settings_can_live_in_the_env_file(monkeypatch, tmp_path):
@@ -113,7 +118,7 @@ def test_dev_razorpay_without_keys_does_not_start(monkeypatch, store, fx, keys, 
     s.db_path, s.workers = ":memory:", False
     ctx = build_context(s, chains={"arc": ARC}, clients={"arc": chain}, store=store, fx=fx, keys=keys)
     assert ctx.onramp.razorpay is None
-    with pytest.raises(RuntimeError, match="APP_ENV=dev is not ready: PUBLIC_BASE_URL"):
+    with pytest.raises(RuntimeError, match="APP_ENV=dev is not ready: RAZORPAY_API_KEY is not set"):
         with TestClient(create_app(ctx, workers=False, fx=False)):
             pass
 
