@@ -33,7 +33,7 @@ export default function SideNav<T extends string>({ tabs, value, onChange }: Pro
       }}
     >
       <Stack direction="row" spacing={1.5} sx={{ alignItems: "center", px: 2, pt: 1.5, pb: 3 }}>
-        <Box component="img" src="/icon.svg" alt="" sx={{ width: 32, height: 32, borderRadius: "10px" }} />
+        <Box component="img" src="/icon.svg" alt="" sx={{ width: 32, height: 32 }} />
         <Typography variant="h6" component="h1" sx={{ fontSize: "1.375rem", letterSpacing: "-0.01em" }}>RupeeRail</Typography>
       </Stack>
       <Stack spacing={0.5}>
