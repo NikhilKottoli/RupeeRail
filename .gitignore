@@ -5,3 +5,9 @@ node_modules/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
