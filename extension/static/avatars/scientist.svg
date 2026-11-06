@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Scientist">
+  
+  <path d="M14 96c0-19 15-29 34-29s34 10 34 29z" fill="#fbfbf8"/>
+  <rect x="41" y="58" width="14" height="14" rx="6" fill="#d8ab85"/>
+  <circle cx="48" cy="44" r="20" fill="#f0c8a4"/>
+  <path d="M27 41c-5-6-1-14 4-15 1-7 11-11 17-8 7-3 16 1 17 8 6 1 9 9 4 15-5-7-12-10-21-10s-16 3-21 10z" fill="#9aa2a8"/>
+  <circle cx="40" cy="44" r="7" fill="#d7eef2" stroke="#2b2320" stroke-width="2.4"/><circle cx="56" cy="44" r="7" fill="#d7eef2" stroke="#2b2320" stroke-width="2.4"/><path d="M47 44h2" stroke="#2b2320" stroke-width="2.4"/><circle cx="40" cy="44" r="2.2" fill="#2b2320"/><circle cx="56" cy="44" r="2.2" fill="#2b2320"/><path d="M42 55c2 2.5 10 2.5 12 0" fill="none" stroke="#2b2320" stroke-width="2.4" stroke-linecap="round"/>
+  
+  <path d="M64 74h8v5l6 13c1 2-1 4-3 4H61c-2 0-4-2-3-4l6-13z" fill="#d7eef2" stroke="#8f979c" stroke-width="1.5"/><path d="M60 88h16l2 4c1 2-1 4-3 4H61c-2 0-4-2-3-4z" fill="#4f8f4a"/>
+</svg>

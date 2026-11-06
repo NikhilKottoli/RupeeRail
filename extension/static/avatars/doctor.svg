@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Doctor">
+  
+  <path d="M14 96c0-19 15-29 34-29s34 10 34 29z" fill="#fbfbf8"/>
+  <rect x="41" y="58" width="14" height="14" rx="6" fill="#ad7449"/>
+  <circle cx="48" cy="44" r="20" fill="#c98d62"/>
+  <path d="M28 42c-1-16 9-23 20-23s21 7 20 23c-4-7-10-11-20-11s-16 4-20 11z" fill="#2b2320"/>
+  <circle cx="41" cy="44" r="2.4" fill="#2b2320"/><circle cx="55" cy="44" r="2.4" fill="#2b2320"/><path d="M41 52c2.5 3.5 11.5 3.5 14 0" fill="none" stroke="#2b2320" stroke-width="2.4" stroke-linecap="round"/>
+  
+  <path d="M36 69c0 14 4 18 12 18s12-4 12-18" fill="none" stroke="#2f7f86" stroke-width="3"/><circle cx="48" cy="88" r="4" fill="#2f7f86"/><path d="M72 78v10M67 83h10" stroke="#d9472b" stroke-width="3.5"/>
+</svg>

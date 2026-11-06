@@ -13,6 +13,7 @@ VPA = "chaipoint@okaxis"
 QR_TEXT = "upi://pay?pa=chaipoint@okaxis&pn=Chai%20Point"
 PAY_SCREEN = ["Paying Chai Point", "chaipoint@okaxis", "₹10", "UPI Lite", "Pay"]
 PAID_SCREEN = ["Paid", "₹10.00", "to Chai Point"]
+HOME_SCREEN = ["Scan any\nQR code", "UPI Lite\n₹96", "Send money"]  # one node holds both lines, as on a real phone
 
 
 def dump(texts):
@@ -23,8 +24,10 @@ def dump(texts):
 class FakePhone:
     """Answers adb commands like a phone: Pay moves from `pay_screen` to `result`."""
 
-    def __init__(self, pay_screen=PAY_SCREEN, result=PAID_SCREEN, foreground=ul.GPAY, die_on_pay=False, die_after_pay=False):
+    def __init__(self, pay_screen=PAY_SCREEN, result=PAID_SCREEN, foreground=ul.GPAY, die_on_pay=False, die_after_pay=False,
+                 start="home", can_open=True):
         self.pay_screen, self.result, self.fg = pay_screen, result, foreground
+        self.screen, self.can_open, self.backs = start, can_open, 0
         self.die_on_pay, self.die_after_pay = die_on_pay, die_after_pay
         self.taps, self.pushed, self.calls = [], [], []
         self.paid = False
@@ -39,15 +42,32 @@ class FakePhone:
             raise RuntimeError("device offline")
         if "input tap" in joined:
             self.taps.append((int(args[3]), int(args[4])))
+            if self.taps[-1] == ul.DEFAULT_TAPS["done"]:
+                self.screen = "pay"
             if self.taps[-1] == ul.DEFAULT_TAPS["pay"]:
                 if self.die_on_pay:
                     raise RuntimeError("device offline")
                 self.paid = True
+                self.screen = "result"
+            return ""
+        if "KEYCODE_BACK" in joined:
+            self.backs += 1
+            self.screen = "home" if self.screen != "other2" else "other"
+            return ""
+        if "statusbar collapse" in joined:
+            if self.fg == "panel":
+                self.fg = ul.GPAY
+            return ""
+        if "monkey" in joined:
+            if self.fg == "panel":
+                return ""  # reopening an app doesn't close the panel
+            if self.can_open:
+                self.fg, self.screen = ul.GPAY, "home" if self.screen == "launcher" else self.screen
             return ""
         if "dumpsys" in joined:
             return f"mCurrentFocus=Window{{1 u0 {self.fg}/.Main}}"
         if args[:2] == ("shell", "cat"):
-            texts = self.result if self.paid else self.pay_screen
+            texts = {"result": self.result, "pay": self.pay_screen, "home": HOME_SCREEN}.get(self.screen, ["Some other screen"])
             return dump(texts) if texts else ""
         return ""
 
@@ -147,9 +167,67 @@ def test_verify_basic_does_not_require_lite_text(cfg):
 
 
 def test_gpay_not_in_foreground_stops_before_any_tap(cfg):
-    p = FakePhone(foreground="com.android.systemui")
+    p = FakePhone(foreground="com.android.systemui", can_open=False)  # locked: Google Pay can't come forward
     code, res = run(cfg, p)
     assert code == ul.EXIT_NOT_PAID and p.taps == [] and "foreground" in res["detail"]
+
+
+def test_consecutive_payments_get_back_to_home_on_their_own(cfg):
+    p = FakePhone()
+    clock = Clock()
+    assert run(cfg, p, job("first"), clock)[0] == ul.EXIT_PAID
+    assert p.screen == "result"  # a payment leaves the phone on the result screen
+    p.paid = False
+    p.taps.clear()
+    assert run(cfg, p, job("second"), clock)[0] == ul.EXIT_PAID
+    assert p.backs == 1 and p.taps[0] == ul.DEFAULT_TAPS["scan_any_qr"]
+
+
+def test_starting_from_another_screen_backs_out_before_any_tap(cfg):
+    p = FakePhone(start="other2")
+    assert run(cfg, p)[0] == ul.EXIT_PAID
+    assert p.backs == 2
+
+
+def test_google_pay_in_the_background_is_reopened(cfg):
+    p = FakePhone(foreground="launcher", start="launcher")
+    assert run(cfg, p)[0] == ul.EXIT_PAID
+    assert any("monkey" in " ".join(c) for c in p.calls)
+
+
+def test_the_notification_panel_gets_closed_instead_of_failing_the_payment(cfg):
+    p = FakePhone(foreground="panel")
+    assert run(cfg, p)[0] == ul.EXIT_PAID
+    assert any("statusbar" in " ".join(c) for c in p.calls)
+
+
+def test_a_screen_it_cant_leave_never_gets_tapped(cfg):
+    class Stuck(FakePhone):
+        def run(self, *args, check=True):
+            out = super().run(*args, check=check)
+            if "KEYCODE_BACK" in " ".join(args):
+                self.screen = "other"
+            return out
+    p = Stuck(start="other")
+    code, res = run(cfg, p)
+    assert code == ul.EXIT_NOT_PAID and p.taps == [] and "home screen" in res["detail"]
+    assert p.pushed == []
+
+
+def test_unreadable_screen_never_gets_tapped(cfg):
+    class Blind(FakePhone):
+        def run(self, *args, check=True):
+            out = super().run(*args, check=check)
+            return "" if args[:2] == ("shell", "cat") else out
+    p = Blind()
+    code, _ = run(cfg, p)
+    assert code == ul.EXIT_NOT_PAID and p.taps == []
+
+
+def test_a_failed_check_returns_to_home_for_the_next_payment(cfg):
+    p = FakePhone(pay_screen=["other@ybl", "₹10", "UPI Lite"])
+    assert run(cfg, p)[0] == ul.EXIT_NOT_PAID
+    assert p.screen == "home" and not p.pay_tapped
 
 
 def test_short_backend_timeout_fails_closed_before_touching_the_phone(cfg):
@@ -348,9 +426,12 @@ echo "$*" >> "$FAKE_ADB_LOG"
 case "$*" in
   *dumpsys*) echo "mCurrentFocus=Window{1 u0 com.google.android.apps.nbu.paisa.user/.Main}" ;;
   *"input tap 572 2054"*) touch "$FAKE_ADB_LOG.paid" ;;
+  *"input tap 871 2196"*) touch "$FAKE_ADB_LOG.done" ;;
   *"shell cat"*)
     if [ -f "$FAKE_ADB_LOG.paid" ]; then
       echo '<hierarchy><node text="Paid"/><node text="₹10.00"/></hierarchy>'
+    elif [ ! -f "$FAKE_ADB_LOG.done" ]; then
+      printf '<hierarchy><node text="Scan any&#10;QR code"/></hierarchy>'
     else
       echo '<hierarchy><node text="chaipoint@okaxis"/><node text="₹10"/><node text="UPI Lite"/></hierarchy>'
     fi ;;

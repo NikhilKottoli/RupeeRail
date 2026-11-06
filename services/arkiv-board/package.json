@@ -1,0 +1,20 @@
+{
+  "name": "rupeerail-arkiv-board",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.10"
+  },
+  "scripts": {
+    "first-job": "node --experimental-strip-types src/first-job.ts"
+  },
+  "dependencies": {
+    "@arkiv-network/sdk": "^1.0.1",
+    "viem": "^2.57.16"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}

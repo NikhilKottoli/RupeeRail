@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RupeeRail Agents</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <!-- Agents -->
+  <section id="home-view">
+    <header class="title">
+      <h1>Your agents</h1>
+      <p class="muted">Each one remembers what you tell it, and pays from its own wallet.</p>
+    </header>
+    <p id="home-error" class="note bad" hidden></p>
+    <ul id="agents" class="cards" aria-label="Agents"></ul>
+    <button id="new-agent" type="button">New agent</button>
+  </section>
+
+  <!-- One agent: type a prompt -->
+  <section id="agent-view" hidden>
+    <button class="back text" type="button" data-to="home">← All agents</button>
+    <div class="identity">
+      <span id="agent-avatar" class="avatar large"></span>
+      <div>
+        <h1 id="agent-name"></h1>
+        <p id="agent-description" class="muted"></p>
+      </div>
+    </div>
+    <div id="agent-wallet" class="wallet"></div>
+    <form id="prompt-form">
+      <label id="prompt-label" for="prompt">What should it do?</label>
+      <textarea id="prompt" rows="3" required maxlength="500"></textarea>
+      <label for="limit">Limit for this order (₹)</label>
+      <input id="limit" type="number" inputmode="numeric" min="1" step="1" required>
+      <label class="check"><input id="rehearse" type="checkbox"> Rehearse: browse only, and stop before ordering or paying</label>
+      <p id="prompt-note" class="muted">It pays without asking, up to this limit. You can stop it at any time before it submits.</p>
+      <p id="prompt-error" class="note bad" hidden></p>
+      <button id="run" type="submit">Run</button>
+    </form>
+    <button id="edit-agent" class="secondary" type="button">Edit agent</button>
+    <h2>History</h2>
+    <ul id="history" class="history" aria-label="Past runs"></ul>
+  </section>
+
+  <!-- Create or edit -->
+  <section id="edit-view" hidden>
+    <button id="edit-back" class="back text" type="button">← Back</button>
+    <h1 id="edit-title">New agent</h1>
+    <form id="agent-form">
+      <div id="template-field">
+        <label for="template">Start from</label>
+        <select id="template"></select>
+      </div>
+      <fieldset>
+        <legend>Avatar</legend>
+        <div id="avatar-preview-row" class="identity">
+          <span id="avatar-preview" class="avatar large"></span>
+          <div id="colours" class="swatches" role="radiogroup" aria-label="Colour"></div>
+        </div>
+        <div id="avatars" class="avatar-grid" role="radiogroup" aria-label="Avatar"></div>
+      </fieldset>
+      <label for="name">Name</label>
+      <input id="name" required maxlength="40">
+      <label for="description">What it does</label>
+      <input id="description" maxlength="120">
+      <label for="instructions">Instructions</label>
+      <textarea id="instructions" rows="6" required maxlength="4000"></textarea>
+      <label for="profile">Things it should know</label>
+      <textarea id="profile" rows="5" maxlength="4000"></textarea>
+      <p class="muted">Your instructions and these details are sent to OpenAI on every step, so leave out anything you wouldn't send there. They stay on this computer otherwise, and are never published.</p>
+      <label for="sites">Allowed sites, one per line</label>
+      <textarea id="sites" rows="2" required placeholder="swiggy.com"></textarea>
+      <label for="start-url">Start page</label>
+      <input id="start-url" type="url" required placeholder="https://www.swiggy.com/">
+      <label for="per-order">Limit per order (₹)</label>
+      <input id="per-order" type="number" inputmode="numeric" min="1" step="1" required>
+      <div id="budget-field">
+        <label for="budget">Budget (USDC)</label>
+        <input id="budget" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+        <p class="muted">The most its wallet can ever spend through RupeeRail. This is enforced on-chain.</p>
+      </div>
+      <p id="edit-error" class="note bad" hidden></p>
+      <button id="save" type="submit">Save</button>
+    </form>
+    <div id="manage" hidden>
+      <h2>Budget</h2>
+      <form id="budget-form" class="inline">
+        <label for="new-budget">New budget (USDC)</label>
+        <input id="new-budget" type="number" inputmode="decimal" min="0.01" step="0.01" required>
+        <button id="set-budget" class="secondary" type="submit">Set budget</button>
+      </form>
+      <h2>Archive</h2>
+      <p class="muted">Revokes its budget on-chain, then removes it from your list. Its wallet and any USDC in it stay with Circle.</p>
+      <button id="archive" class="danger" type="button">Archive agent</button>
+    </div>
+  </section>
+
+  <!-- A run -->
+  <section id="run-view" hidden>
+    <div class="identity">
+      <span id="run-avatar" class="avatar large"></span>
+      <div>
+        <h1 id="run-name"></h1>
+        <p id="run-prompt" class="muted"></p>
+      </div>
+    </div>
+    <button id="stop" class="danger" type="button">Stop</button>
+    <button id="resume" type="button" hidden>I've handled it, continue</button>
+    <button id="done" class="secondary" type="button" hidden>Done</button>
+    <div id="outcome" role="status" aria-live="polite" hidden></div>
+    <img id="shot" alt="Latest view of the page" hidden>
+    <ol id="log" aria-label="Agent steps"></ol>
+  </section>
+
+  <script src="panel.js"></script>
+</body>
+</html>

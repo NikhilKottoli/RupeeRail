@@ -4,8 +4,9 @@ All integers in responses are decimal strings (except chainId inside EIP-712 dom
 and diagnostic ages, which the contract shows as numbers). Errors are {"error": CODE, "message"}.
 
 Privacy: offramp ids are public onchain, so GET /offramp/{id} returns `payee: null` unless the
-caller presents the `viewToken` that /quote returned (or EXPOSE_PAYEE_BY_ID=1 is set). qrText and
-salt are never returned by any route.
+caller presents the `viewToken` that /quote returned (or EXPOSE_PAYEE_BY_ID=1 is set). qrText is returned only to
+a viewToken holder, because a merchant's QR carries fields such as `tr` that the phone needs to match the order.
+The salt is never returned by any route.
 """
 
 from __future__ import annotations
@@ -111,7 +112,8 @@ def offramp_view(ctx, id_: str, p: dict | None, q: dict | None, *, view_token: s
            "dispute": txs_raw.get("dispute"), "final": final}
 
     payee = None
-    if q and (ctx.settings.expose_payee_by_id or (view_token and view_token == q.get("view_token"))):
+    token_ok = bool(q and view_token and view_token == q.get("view_token"))
+    if q and (ctx.settings.expose_payee_by_id or token_ok):
         payee = {"upiId": q["upi_id"], "name": q["payee_name"]}
 
     releasable_at = (p or {}).get("releasable_at")
@@ -124,6 +126,7 @@ def offramp_view(ctx, id_: str, p: dict | None, q: dict | None, *, view_token: s
         "status": status,
         "payout": (p or {}).get("dispatch_state") or "NONE",
         "payee": payee,
+        "qrText": q["qr_text"] if token_ok else None,
         "amount": _s(src.get("amount")),
         "inrPaise": _s(src.get("inr_paise")),
         "refundReason": _s(reason),

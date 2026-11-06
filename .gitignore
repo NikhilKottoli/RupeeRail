@@ -5,3 +5,14 @@ node_modules/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Kept locally: handoff notes and the mock stores, which include a personal UPI QR
+*handoff*.md
+HANDOFF*.md
+apps/mock-store/

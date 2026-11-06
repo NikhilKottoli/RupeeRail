@@ -61,7 +61,7 @@ These are enforced here, so they hold even if the backend or its token is compro
 
 ## Merchant QRs
 
-The backend doesn't return the raw QR, so the phone pays a new QR built from the UPI ID, name and amount. Fields such as `mc`, `tr` and `sign` are lost, so Google Pay may treat a merchant differently or refuse the payment. Rehearse with a real merchant's UPI ID before relying on it.
+The phone pays the merchant's original QR, so fields such as `mc`, `tr` and `sign` stay intact. If the QR has no amount, the signed amount is added. A real merchant is still untested, and the screen check may stop the payment if Google Pay shows a different name from the QR's.
 
 ## Results stay on this machine
 
