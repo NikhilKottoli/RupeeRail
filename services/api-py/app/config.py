@@ -15,6 +15,9 @@ REPO_ROOT = SERVICE_DIR.parent.parent
 ABI_PATH = APP_DIR / "abi" / "ScanPayVault.json"
 
 GWEI = 10**9
+# The deployed host (Caddy serves the PWA and proxies the API on it). Razorpay's callback and webhook
+# point here unless PUBLIC_BASE_URL overrides it, e.g. with an ngrok URL for local testing.
+AZURE_BASE_URL = "https://rupee-rail.indiasouthcentral.cloudapp.azure.com"
 
 
 @dataclass(frozen=True)
@@ -140,6 +143,26 @@ class Settings:
     dry_run: bool = field(default_factory=lambda: _env_bool("DRY_RUN", False))
     tx_receipt_timeout_sec: float = field(default_factory=lambda: float(_env_int("TX_RECEIPT_TIMEOUT_SEC", 120)))
     env_file: str = field(default_factory=lambda: os.environ.get("RUPEERAIL_ENV_FILE") or str(REPO_ROOT / ".env"))
+    # Onramp collection (app/environment.py, app/razorpay.py). These three may also live in the .env
+    # file (read as text); filled in __post_init__ because they depend on env_file.
+    collect_rail: str = ""
+    public_base_url: str = ""  # https URL Razorpay reaches us at; AZURE_BASE_URL unless overridden (ngrok locally)
+    web_app_url: str = ""  # where the browser lands after paying; defaults to public_base_url
+    onramp_link_ttl_sec: int = field(default_factory=lambda: _env_int("ONRAMP_LINK_TTL_SEC", 960))  # Razorpay min 15 min
+    onramp_tick_sec: float = field(default_factory=lambda: float(_env_int("ONRAMP_TICK_SEC", 15)))
+
+    def __post_init__(self) -> None:
+        from .environment import collect_rail
+        from .keys import _lookup
+
+        def get(name: str) -> str:
+            return _lookup(name, self.env_file) or ""
+
+        if not self.collect_rail:
+            self.collect_rail = collect_rail({"APP_ENV": os.environ.get("APP_ENV", ""),
+                                              "COLLECT_RAIL": get("COLLECT_RAIL")}).name
+        self.public_base_url = (self.public_base_url or get("PUBLIC_BASE_URL") or AZURE_BASE_URL).rstrip("/")
+        self.web_app_url = (self.web_app_url or get("WEB_APP_URL") or self.public_base_url).rstrip("/")
 
     def limits(self) -> dict:
         return {

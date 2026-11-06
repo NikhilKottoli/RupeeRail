@@ -19,7 +19,7 @@ To implement:
      X-Payout-Idempotency: idempotencyKey, so a retried job can't pay twice.
   2. Poll GET /v1/payouts/{id} until a final status, then print the UTR.
   3. Set `implemented=True` on the "razorpayx" rail in app/environment.py.
-Keys come from the environment (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET); never log them.
+Keys come from the environment or the .env file (RAZORPAY_API_KEY, RAZORPAY_API_SECRET); never log them.
 """
 
 import json

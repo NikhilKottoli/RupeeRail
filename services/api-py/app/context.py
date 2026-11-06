@@ -45,7 +45,7 @@ class Context:
 
 def build_context(settings: Settings | None = None, *, chains: dict[str, ChainConfig] | None = None,
                   clients: dict[str, Any] | None = None, store: Store | None = None, fx: FxFeed | None = None,
-                  keys: Keys | None = None, black_box=None, clock=None) -> Context:
+                  keys: Keys | None = None, black_box=None, clock=None, razorpay: Any = None) -> Context:
     import time
 
     settings = settings or Settings()
@@ -64,6 +64,8 @@ def build_context(settings: Settings | None = None, *, chains: dict[str, ChainCo
     runner_kwargs = {"black_box": black_box} if black_box else {}
     runner = PayoutRunner(store, settler, command=settings.payout_command, timeout_sec=settings.payout_timeout_sec,
                           max_lock_age_sec=settings.payout_max_lock_age_sec, hub=hub, clock=clock, **runner_kwargs)
+    if razorpay is None and settings.collect_rail == "razorpay":
+        razorpay = _razorpay_client(settings)  # None if keys are missing; startup then refuses (environment.py)
     listeners = {
         k: Listener(k, clients[k], store, settler, runner, hub=hub, poll_sec=settings.listener_poll_sec,
                     max_range=settings.listener_max_range, confirmations=settings.listener_confirmations)
@@ -76,6 +78,15 @@ def build_context(settings: Settings | None = None, *, chains: dict[str, ChainCo
         quotes=QuoteService(settings, chains, store, fx, keys.quote_signer, clients=clients, clock=clock),
         paymaster=Paymaster(chains, clients, store, keys.paymaster, hub=hub, clock=clock),
         disputes=DisputeRelay(chains, clients, store, keys.paymaster, hub=hub),
-        onramp=OnrampService(settings, chains, store, fx, settler, clock=clock),
+        onramp=OnrampService(settings, chains, store, fx, settler, clock=clock, razorpay=razorpay),
         limiter=RateLimiter(settings.rate_limit_per_min),
     )
+
+
+def _razorpay_client(settings: Settings):
+    from .razorpay import RazorpayClient, RazorpayError, load_creds
+
+    try:
+        return RazorpayClient(load_creds(settings.env_file))
+    except RazorpayError:
+        return None

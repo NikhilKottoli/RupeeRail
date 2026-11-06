@@ -125,6 +125,25 @@ CREATE TABLE IF NOT EXISTS events (
   PRIMARY KEY (chain, tx, log_index)
 );
 CREATE INDEX IF NOT EXISTS events_ref ON events(ref_id);
+
+CREATE TABLE IF NOT EXISTS razorpay_links (
+  order_id     TEXT PRIMARY KEY,            -- onramp_orders.id
+  link_id      TEXT NOT NULL UNIQUE,        -- plink_...
+  reference_id TEXT NOT NULL,
+  short_url    TEXT NOT NULL,
+  expires_at   INTEGER NOT NULL,
+  status       TEXT NOT NULL,               -- Razorpay's: created | paid | expired | cancelled | ...
+  payment_id   TEXT,                        -- pay_... once captured
+  notified_at  INTEGER,                     -- a callback/webhook said something happened; reconcile until settled
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS razorpay_events (
+  event_id     TEXT PRIMARY KEY,            -- x-razorpay-event-id (webhook dedupe)
+  name         TEXT NOT NULL,
+  received_at  INTEGER NOT NULL
+);
 """
 
 
@@ -326,6 +345,36 @@ class Store:
 
     def onramps_by_status(self, status: str) -> list[dict]:
         return self._all("SELECT * FROM onramp_orders WHERE status = ?", (status,))
+
+    # ---- razorpay ------------------------------------------------------------------------------
+    def insert_razorpay_link(self, link: dict) -> None:
+        t = now()
+        link = {**link, "created_at": t, "updated_at": t}
+        self._exec(f"INSERT INTO razorpay_links ({','.join(link)}) VALUES ({','.join('?' * len(link))})",
+                   link.values())
+
+    def get_razorpay_link(self, order_id: str) -> dict | None:
+        return self._one("SELECT * FROM razorpay_links WHERE order_id = ?", (order_id.lower(),))
+
+    def get_razorpay_link_by_link_id(self, link_id: str) -> dict | None:
+        return self._one("SELECT * FROM razorpay_links WHERE link_id = ?", (link_id,))
+
+    def update_razorpay_link(self, order_id: str, **fields: Any) -> None:
+        sets = "".join(f", {k} = ?" for k in fields)
+        self._exec(f"UPDATE razorpay_links SET updated_at = ?{sets} WHERE order_id = ?",
+                   (now(), *fields.values(), order_id.lower()))
+
+    def razorpay_links_to_reconcile(self) -> list[dict]:
+        """Links someone told us about whose order hasn't been paid yet (or is stuck PAYING)."""
+        return self._all(
+            "SELECT l.* FROM razorpay_links l JOIN onramp_orders o ON o.id = l.order_id "
+            "WHERE l.notified_at IS NOT NULL AND o.status IN ('AWAITING_FIAT', 'PAYING') ORDER BY l.notified_at")
+
+    def record_razorpay_event(self, event_id: str, name: str) -> bool:
+        """True the first time an event id is seen, False for a redelivery."""
+        cur = self._exec("INSERT OR IGNORE INTO razorpay_events (event_id, name, received_at) VALUES (?, ?, ?)",
+                         (event_id, name, now()))
+        return cur.rowcount == 1
 
     # ---- cursors -------------------------------------------------------------------------------
     def get_cursor(self, chain: str) -> int | None:
