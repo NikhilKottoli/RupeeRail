@@ -29,6 +29,7 @@ interface Props {
 }
 
 type Stage = "scan" | "details" | "review" | "status";
+const STAGE_ORDER: Stage[] = ["scan", "details", "review", "status"];
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -55,6 +56,12 @@ export default function PayScreen({ config, provider, address }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const previousStage = useRef(stage);
+  const direction = STAGE_ORDER.indexOf(stage) < STAGE_ORDER.indexOf(previousStage.current) ? "back" : "forward";
+  useEffect(() => {
+    previousStage.current = stage;
+  }, [stage]);
+  const stageProps = { className: "rr-stage", "data-direction": direction };
 
   const chain = config.chains[chainKey];
   const minPaise = Number(config.limits.minInrPaise);
@@ -177,7 +184,7 @@ export default function PayScreen({ config, provider, address }: Props) {
 
   if (stage === "status" && paymentId && quote) {
     return (
-      <Stack spacing={2}>
+      <Stack key="status" spacing={2} {...stageProps}>
         <PaymentStatus config={config} provider={provider} address={address} id={paymentId} viewToken={quote.viewToken} />
         <Button variant="outlined" onClick={reset}>New payment</Button>
       </Stack>
@@ -188,7 +195,7 @@ export default function PayScreen({ config, provider, address }: Props) {
     const expired = secondsLeft <= 0;
     const tooLow = account !== null && BigInt(account.balance) < BigInt(quote.intent.amount);
     return (
-      <Stack spacing={2}>
+      <Stack key="review" spacing={2} {...stageProps}>
         <Typography variant="h5" component="h2">Review payment</Typography>
         <Card>
           <CardContent>
@@ -226,7 +233,7 @@ export default function PayScreen({ config, provider, address }: Props) {
   if (stage === "details" && qr) {
     const fixedAmount = qr.amountPaise !== null;
     return (
-      <Stack spacing={2.5}>
+      <Stack key="details" spacing={2.5} {...stageProps}>
         <div>
           <Typography variant="body2" color="text.secondary">Paying</Typography>
           <Typography variant="h5" component="h2" sx={{ overflowWrap: "anywhere" }}>{qr.name ?? qr.upiId}</Typography>
@@ -276,7 +283,7 @@ export default function PayScreen({ config, provider, address }: Props) {
   }
 
   return (
-    <Stack spacing={2.5} sx={{ pt: 2 }}>
+    <Stack key="scan" spacing={2.5} sx={{ pt: 2 }} {...stageProps}>
       <Stack spacing={1}>
         <Typography variant="h4" component="h2">Scan to pay</Typography>
         <Typography color="text.secondary">Pay any UPI QR from your stablecoin balance.</Typography>

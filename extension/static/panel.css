@@ -1,19 +1,23 @@
-:root { color-scheme: light dark; --primary: #1b5e9e; --on-primary: #fff; --danger: #ba1a1a; --muted: #5c6570; --line: #dfe2eb; --ok: #1b6e3c; --warn: #8a5100; --bg: #f8f9ff; --card: #fff; --text: #191c20; }
-@media (prefers-color-scheme: dark) { :root { --primary: #a3c9ff; --on-primary: #00315b; --danger: #ffb4ab; --muted: #c3c6cf; --line: #33353a; --ok: #7dd99a; --warn: #ffb95f; --bg: #101418; --card: #1d2024; --text: #e1e2e8; } }
+:root { color-scheme: light dark; --primary: #1b5e9e; --on-primary: #fff; --danger: #ba1a1a; --muted: #5c6570; --line: #dfe2eb; --ok: #1b6e3c; --warn: #8a5100; --bg: #f8f9ff; --card: #fff; --text: #191c20; --press: rgb(0 0 0 / 0.04); --ease-out: cubic-bezier(0.23, 1, 0.32, 1); }
+@media (prefers-color-scheme: dark) { :root { --primary: #a3c9ff; --on-primary: #00315b; --danger: #ffb4ab; --muted: #c3c6cf; --line: #33353a; --ok: #7dd99a; --warn: #ffb95f; --bg: #101418; --card: #1d2024; --text: #e1e2e8; --press: rgb(255 255 255 / 0.06); } }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; padding: 16px; font: 14px/1.45 Roboto, system-ui, sans-serif; color: var(--text); background: var(--bg); }
-h1 { margin: 0; font-size: 18px; font-weight: 500; }
+body { margin: 0; padding: 16px; font: 14px/1.45 Roboto, system-ui, sans-serif; font-variant-numeric: tabular-nums; color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -0.005em; text-wrap: balance; }
 h2 { margin: 20px 0 6px; font-size: 14px; font-weight: 500; }
-.muted { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
+.muted { color: var(--muted); font-size: 12px; margin: 4px 0 12px; text-wrap: pretty; }
 label { display: block; font-weight: 500; margin: 12px 0 4px; }
-label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; cursor: pointer; }
 label.check input { width: auto; margin-top: 3px; }
-textarea, input, select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; color: inherit; background: var(--card); }
+textarea, input, select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; color: inherit; background: var(--card); transition: border-color 150ms ease; }
+textarea:focus, input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 fieldset { margin: 12px 0 0; padding: 0; border: 0; }
 legend { padding: 0; font-weight: 500; }
-button { width: 100%; min-height: 44px; margin-top: 8px; border: 0; border-radius: 999px; font: inherit; font-weight: 500; background: var(--primary); color: var(--on-primary); cursor: pointer; }
-button:disabled { opacity: .5; cursor: default; }
+
+/* Buttons answer the moment they're pressed. Only the transform uses the stronger curve. */
+button { width: 100%; min-height: 44px; margin-top: 8px; border: 0; border-radius: 999px; font: inherit; font-weight: 500; background: var(--primary); color: var(--on-primary); cursor: pointer; user-select: none; touch-action: manipulation; transition: transform 160ms var(--ease-out), background-color 150ms ease, border-color 150ms ease, opacity 150ms ease; }
+button:active:not(:disabled) { transform: scale(0.97); }
+button:disabled { opacity: 0.5; cursor: default; }
 button:focus-visible, .agent-card:focus-visible, .swatch:focus-visible, .avatar-choice:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 button.danger { background: var(--danger); color: #fff; }
 button.secondary { background: transparent; color: var(--primary); border: 1px solid var(--line); }
@@ -22,8 +26,13 @@ button.text { width: auto; min-height: 32px; margin: 0 0 8px; padding: 0; backgr
 .note { margin: 8px 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); overflow-wrap: anywhere; }
 .note.bad { border-color: var(--danger); color: var(--danger); }
 
-/* Avatars */
-.avatar { display: inline-block; flex: none; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: var(--line); }
+/* Moving between screens. Short, because it happens often. */
+section { transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out); }
+@starting-style { section { opacity: 0; transform: translateY(4px); } }
+
+/* Avatars. A faint inner edge keeps a pale colour from melting into the background. */
+.avatar { position: relative; display: inline-block; flex: none; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: var(--line); }
+.avatar::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.07); }
 .avatar img { display: block; width: 100%; height: 100%; }
 .avatar.large { width: 64px; height: 64px; }
 .avatar.small { width: 22px; height: 22px; }
@@ -40,14 +49,18 @@ button.text { width: auto; min-height: 32px; margin: 0 0 8px; padding: 0; backgr
 .avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; margin-top: 8px; }
 .avatar-choice { width: 100%; height: auto; aspect-ratio: 1; min-height: 0; margin: 0; padding: 4px; border-radius: 50%; background: transparent; border: 2px solid transparent; }
 .avatar-choice .avatar { width: 100%; height: 100%; }
+.avatar-choice:active:not(:disabled) { transform: scale(0.94); }
 .avatar-choice[aria-checked="true"] { border-color: var(--primary); }
 .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
-.swatch { width: 28px; height: 28px; min-height: 0; margin: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+.swatch { width: 28px; height: 28px; min-height: 0; margin: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.07); }
+.swatch:active:not(:disabled) { transform: scale(0.9); }
 .swatch[aria-checked="true"] { border-color: var(--text); }
 
 /* Agent cards */
 .cards, .history { margin: 0; padding: 0; list-style: none; }
 .agent-card { display: flex; gap: 12px; align-items: center; width: 100%; min-height: 72px; margin: 0 0 8px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: inherit; font-weight: 400; text-align: left; }
+.agent-card:active:not(:disabled) { transform: scale(0.985); background: var(--press); }
+@media (hover: hover) and (pointer: fine) { .agent-card:hover { border-color: var(--primary); } }
 .agent-card strong { display: block; font-weight: 500; font-size: 15px; }
 .agent-card .summary, .agent-card .budget { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .agent-card .budget.attention { color: var(--warn); }
@@ -64,13 +77,31 @@ button.text { width: auto; min-height: 32px; margin: 0 0 8px; padding: 0; backgr
 .history a { color: var(--primary); }
 
 /* A run */
-#outcome { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-weight: 500; overflow-wrap: anywhere; }
+.run-state { display: flex; gap: 8px; align-items: center; min-height: 20px; margin: 4px 0 4px; color: var(--muted); font-size: 12px; }
+.spinner { flex: none; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--primary); border-radius: 50%; animation: spin 700ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#outcome { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-weight: 500; overflow-wrap: anywhere; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), border-color 150ms ease, color 150ms ease; }
+@starting-style { #outcome { opacity: 0; transform: translateY(-4px); } }
 #outcome.good { border-color: var(--ok); color: var(--ok); }
 #outcome.bad { border-color: var(--danger); color: var(--danger); }
 #outcome.warn { border-color: var(--warn); color: var(--warn); }
 #shot { display: block; width: 100%; margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; }
 #log { margin: 12px 0 0; padding: 0; list-style: none; }
-#log li { display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
+#log li { display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+@starting-style { #log li { opacity: 0; transform: translateY(-4px); } }
 #log li > div { min-width: 0; }
 #log .stage { font-weight: 500; }
 #log .model { color: var(--muted); }
+/* The agent's choices and results are what a person reads. Page reads are bookkeeping, so they stay on one quiet line. */
+#log li[data-stage="observe"], #log li[data-stage="act"], #log li[data-stage="preflight"] { color: var(--muted); }
+#log li[data-stage="observe"] > div { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#log li[data-stage="observe"] .avatar, #log li[data-stage="act"] .avatar { opacity: 0.5; }
+#log li[data-stage="result"], #log li[data-stage="need_help"] { font-weight: 500; }
+
+/* Reduced motion means gentler, not nothing: fades stay, because they still explain what changed. */
+@media (prefers-reduced-motion: reduce) {
+  button:active:not(:disabled), .agent-card:active:not(:disabled), .avatar-choice:active:not(:disabled), .swatch:active:not(:disabled) { transform: none; }
+  section, #outcome, #log li { transition: opacity 120ms ease; }
+  @starting-style { section, #outcome, #log li { transform: none; } }
+  .spinner { animation-duration: 1400ms; }
+}

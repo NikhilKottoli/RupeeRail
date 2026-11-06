@@ -79,8 +79,10 @@ test("choosing an agent and typing a prompt ends in a real result, from the page
 
   await expect(panel.locator("#run-name")).toHaveText("Chef");
   await expect(panel.locator("#run-avatar img")).toHaveAttribute("src", "avatars/chef.svg");
+  await expect(panel.locator("#run-state")).toContainText("Working");
   await expect(outcome(panel)).toContainText("Paid: The merchant was paid", { timeout: 60_000 });
   await expect(panel.locator("#log li .avatar img").first()).toHaveAttribute("src", "avatars/chef.svg");
+  await expect(panel.locator("#run-state")).toBeHidden();
 
   // The agent really drove the store, in the tab the person was on.
   await expect(store.getByRole("heading", { name: "Pay with UPI" })).toBeVisible();
@@ -142,6 +144,7 @@ test("an item that doesn't exist asks for help, and Stop ends it", async ({ pane
   await makeAgent(request, panel);
   await runAgent(panel, "Chef", "Order a pizza");
   await expect(outcome(panel)).toContainText("Chef needs help", { timeout: 30_000 });
+  await expect(panel.locator("#run-state")).toContainText("Waiting for you");
   await panel.getByRole("button", { name: "Stop" }).click();
   await expect(outcome(panel)).toContainText("Stopped", { timeout: 15_000 });
   await expect(panel.getByRole("button", { name: "Done" })).toBeVisible();

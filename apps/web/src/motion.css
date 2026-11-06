@@ -1,0 +1,150 @@
+/*
+ * Motion and small details that MUI's theme can't express. Every animation here has a job: confirming a press, showing
+ * a state change, or stopping something from appearing abruptly. Tabs and lists don't animate, because they're used
+ * too often for that to feel like anything but delay.
+ */
+
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  /* A pull-to-refresh mid-payment would throw away the screen the person is on. */
+  overscroll-behavior-y: contain;
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+/* The steps of a payment. Forward comes from the right, and back from the left, so the flow has a direction. */
+.rr-stage {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+@starting-style {
+  .rr-stage {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+
+  .rr-stage[data-direction="back"] {
+    transform: translateX(-10px);
+  }
+}
+
+/* A payment's status changing. The blur makes the old and new icon read as one thing changing. */
+.rr-status-change {
+  display: inline-flex;
+  transition: opacity 240ms var(--ease-out), transform 240ms var(--ease-out), filter 240ms var(--ease-out);
+}
+
+@starting-style {
+  .rr-status-change {
+    opacity: 0;
+    transform: scale(0.9);
+    filter: blur(2px);
+  }
+}
+
+.rr-status-text {
+  transition: opacity 200ms var(--ease-out);
+}
+
+@starting-style {
+  .rr-status-text {
+    opacity: 0;
+  }
+}
+
+/* Errors and notices appear in the middle of a screen, so they shouldn't just pop in. */
+.MuiAlert-root {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+@starting-style {
+  .MuiAlert-root {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Dialogs. They fade through MUI, and this adds a small rise on the way in only, so closing feels quicker. */
+.MuiDialog-paper {
+  animation: rr-rise 200ms var(--ease-out);
+}
+
+@keyframes rr-rise {
+  from {
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+/* The first screen a new person sees. It's rare enough to be worth a small flourish, and never blocks a tap. */
+.rr-stagger > * {
+  animation: rr-enter 320ms var(--ease-out) backwards;
+}
+
+.rr-stagger > :nth-child(2) {
+  animation-delay: 50ms;
+}
+
+.rr-stagger > :nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.rr-stagger > :nth-child(4) {
+  animation-delay: 150ms;
+}
+
+@keyframes rr-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Reduced motion means gentler, not nothing: fades stay, because they still explain what changed. */
+@media (prefers-reduced-motion: reduce) {
+  .rr-stage,
+  .rr-status-change,
+  .MuiAlert-root {
+    transition: opacity 150ms ease;
+  }
+
+  @starting-style {
+    .rr-stage,
+    .rr-stage[data-direction="back"],
+    .rr-status-change,
+    .MuiAlert-root {
+      transform: none;
+      filter: none;
+    }
+  }
+
+  .MuiDialog-paper,
+  .rr-stagger > * {
+    animation: none;
+  }
+
+  .MuiButton-root:active,
+  .MuiIconButton-root:active,
+  .MuiToggleButton-root:active,
+  .MuiChip-root:active,
+  .MuiBottomNavigationAction-root:active {
+    transform: none !important;
+  }
+}

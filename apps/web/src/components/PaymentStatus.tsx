@@ -124,8 +124,8 @@ export default function PaymentStatus({ config, provider, address, id, viewToken
         <CardContent>
           <Stack spacing={2}>
             <Stack direction="row" spacing={2} aria-live="polite" sx={{ alignItems: "flex-start" }}>
-              <ToneIcon tone={status.tone} />
-              <div>
+              <span key={status.tone} className="rr-status-change"><ToneIcon tone={status.tone} /></span>
+              <div key={status.title} className="rr-status-text">
                 <Typography variant="h6" component="h2">{status.title}</Typography>
                 <Typography variant="body2" color="text.secondary">{status.detail}</Typography>
               </div>

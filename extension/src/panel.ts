@@ -279,6 +279,13 @@ function enterRun(agent: { name: string; avatar: string; colour: string }, promp
   $<HTMLButtonElement>("stop").disabled = false;
   $("resume").hidden = true;
   $("done").hidden = true;
+  setRunState("Working…");
+}
+
+/** What the agent is doing now, or nothing once it's finished. */
+function setRunState(text: string | null): void {
+  $("run-state").hidden = text === null;
+  if (text) $("run-state-text").textContent = text;
 }
 
 function showOutcome(status: string, message: string): void {
@@ -292,6 +299,7 @@ let runAgent: { avatar: string; colour: string } | null = null;
 
 function addStep(event: any): void {
   const item = document.createElement("li");
+  item.dataset.stage = event.stage;
   if (runAgent) item.append(avatarEl(runAgent.avatar, runAgent.colour, "small"));
   const body = document.createElement("div");
   const stage = document.createElement("span");
@@ -317,18 +325,23 @@ function onEvent(event: any): void {
   }
   if (event.stage === "need_help") {
     $("resume").hidden = false;
+    setRunState("Waiting for you");
     const box = $("outcome");
     box.hidden = false;
     box.className = "warn";
     box.textContent = `${$("run-name").textContent} needs help: ${event.message}`;
   }
-  if (event.stage === "result") showOutcome(event.status, event.message);
+  if (event.stage === "result") {
+    showOutcome(event.status, event.message);
+    setRunState(null);
+  }
 }
 
 function runEnded(): void {
   $("stop").hidden = true;
   $("resume").hidden = true;
   $("done").hidden = false;
+  setRunState(null);
 }
 
 $<HTMLFormElement>("prompt-form").addEventListener("submit", async (event) => {
@@ -355,12 +368,14 @@ $("rehearse").addEventListener("change", () => {
 
 $("stop").addEventListener("click", () => {
   $<HTMLButtonElement>("stop").disabled = true;
+  setRunState("Stopping…");
   void chrome.runtime.sendMessage({ kind: "stop" });
 });
 
 $("resume").addEventListener("click", () => {
   $("resume").hidden = true;
   $("outcome").hidden = true;
+  setRunState("Working…");
   void chrome.runtime.sendMessage({ kind: "resume" });
 });
 

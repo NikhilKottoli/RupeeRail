@@ -15,7 +15,7 @@ interface Props {
 
 export default function ConnectScreen({ wallets, connecting, error, onConnect }: Props) {
   return (
-    <Stack spacing={3} sx={{ pt: 4 }}>
+    <Stack spacing={3} sx={{ pt: 4 }} className="rr-stagger">
       <Stack spacing={1}>
         <Typography variant="h4" component="h2">Pay any UPI QR with stablecoins</Typography>
         <Typography color="text.secondary">
