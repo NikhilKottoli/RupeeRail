@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.chain import ChainError
 from app.context import build_context
 from app.main import create_app
-from app.onramp import check_paid_link
+from app.onramp import FORGET_PENDING_AFTER_SEC, check_paid_link
 from app.razorpay import (RazorpayClient, RazorpayCreds, RazorpayError, callback_message, hmac_hex,
                           verify_callback_signature, verify_webhook_signature)
 
@@ -294,9 +294,51 @@ async def test_reconcile_retries_after_provider_and_chain_errors(renv):
     assert await ctx.onramp.reconcile() == {}  # settled: nothing left to follow up
 
 
+async def test_reconcile_finds_a_paid_link_when_the_callback_and_webhook_went_missing(renv):
+    client, ctx, chain, rz = renv
+    o = create(client)
+    assert await ctx.onramp.reconcile() == {o["orderId"]: "pending"}  # nothing paid yet, and nothing sent
+    assert chain.sent == []
+    rz.pay(o["checkout"]["linkId"])
+    assert await ctx.onramp.reconcile() == {o["orderId"]: "paid"}
+    assert client.get(f"/onramp/{o['orderId']}").json()["status"] == "PAID" and len(chain.sent) == 1
+    assert await ctx.onramp.reconcile() == {}
+
+
+async def test_reconcile_closes_an_expired_link_nobody_mentioned(renv):
+    client, ctx, _, rz = renv
+    o = create(client)
+    rz.links[o["checkout"]["linkId"]]["status"] = "expired"
+    assert await ctx.onramp.reconcile() == {o["orderId"]: "expired"}
+    assert client.get(f"/onramp/{o['orderId']}").json()["status"] == "EXPIRED"
+    assert await ctx.onramp.reconcile() == {}
+
+
+async def test_reconcile_stops_following_a_link_long_after_it_expired(renv):
+    client, ctx, _, _ = renv
+    o = create(client)
+    ctx.onramp.clock = lambda: int(o["checkout"]["expiresAt"]) + FORGET_PENDING_AFTER_SEC + 1
+    assert await ctx.onramp.reconcile() == {}
+
+
+async def test_reconcile_leaves_a_mismatch_for_an_operator(renv):
+    client, ctx, chain, rz = renv
+    o = create(client)
+    rz.pay(o["checkout"]["linkId"], amount=1)
+    assert await ctx.onramp.reconcile() == {o["orderId"]: "mismatch"}
+    assert client.get(f"/onramp/{o['orderId']}").json()["lastError"].startswith("mismatch")
+    assert await ctx.onramp.reconcile() == {} and chain.sent == []
+
+
+def test_config_tells_the_app_which_rail_is_on(renv):
+    client, *_ = renv
+    assert client.get("/config").json()["onramp"] == {"rail": "razorpay", "testMode": True}
+
+
 def test_routes_are_off_on_the_manual_rail(settings, store, fx, keys, chain):
     ctx = build_context(settings, chains={"arc": ARC}, clients={"arc": chain}, store=store, fx=fx, keys=keys)
     with TestClient(create_app(ctx, workers=False, fx=False)) as client:
         assert client.post("/onramp/razorpay/webhook", content=b"{}").json()["error"] == "RAIL_DISABLED"
         r = client.post("/onramp", json={"chain": "arc", "wallet": "0x" + "11" * 20, "inr": "10"})
         assert r.json()["checkout"] is None and r.json()["payTo"]["upiId"] == "rupeerail@okaxis"
+        assert client.get("/config").json()["onramp"] == {"rail": "manual", "testMode": False}

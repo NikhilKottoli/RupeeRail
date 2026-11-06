@@ -31,10 +31,12 @@ E2E_SCREENSHOTS=1 npx playwright test  # also saves screens to e2e/screenshots
 
 The app and API share one hostname, so the app must not use a client-side path that the API owns: `/health`, `/config`, `/account`, `/quote`, `/offramp`, `/offramps`, `/dispute`, `/events`, `/onramp` or `/admin`. If you add an API path, also add it to `deploy/Caddyfile` and to `API_PATHS` in `vite.config.ts`.
 
-The live site currently hides the Buy tab, until Razorpay is confirmed on the server. Build with `VITE_BUY_TAB=off` to keep it hidden, and without it to launch the tab.
+The Buy tab appears only when the backend's `/config` reports `onramp.rail` as `razorpay`, so no separate build is needed to launch it. The manual rail stays hidden because its UPI ID is a placeholder until it's set.
+
+The CSP's `connect-src` in `deploy/Caddyfile` lists every host the browser calls directly: the Arc RPC and Circle's API, for the swap. `e2e/csp.spec.ts` runs the swap under that exact policy. Reload Caddy whenever it changes.
 
 ```bash
-VITE_BUY_TAB=off npm run build
+npm run build
 rsync -az --delete --rsync-path="sudo rsync" --chown=root:root dist/ <host>:/var/www/rupeerail/
 rsync -az --rsync-path="sudo rsync" --chown=root:root deploy/Caddyfile <host>:/etc/caddy/Caddyfile
 ssh <host> 'sudo systemctl reload caddy'

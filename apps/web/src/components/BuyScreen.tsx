@@ -114,6 +114,9 @@ export default function BuyScreen({ config, address, returned = null }: Props) {
   };
 
   const errorAlert = error && <Alert severity="error" role="alert">{error}</Alert>;
+  const testNote = config.onramp?.testMode && (
+    <Alert severity="info">Test mode: Razorpay won't charge real money. Pay with one of its test cards.</Alert>
+  );
   const busyLine = busy && (
     <Stack direction="row" spacing={1.5} role="status" sx={{ alignItems: "center" }}>
       <CircularProgress size={20} />
@@ -146,6 +149,7 @@ export default function BuyScreen({ config, address, returned = null }: Props) {
           <GroupedDetail label="To wallet" value={shortAddress(order.wallet)} />
           <GroupedDetail label="Rate held until" value={formatDateTime(order.checkout.expiresAt)} />
         </GroupedList>
+        {testNote}
         <Typography variant="body2" color="text.secondary">
           You'll pay on Razorpay with UPI, card or netbanking, then come back here automatically.
         </Typography>
@@ -167,6 +171,7 @@ export default function BuyScreen({ config, address, returned = null }: Props) {
         <Typography variant="h4" component="h2">Buy stablecoins</Typography>
         <Typography color="text.secondary">Pay in rupees and get tokens in your wallet.</Typography>
       </Stack>
+      {testNote}
       <GroupedList>
         <GroupedBlock>
           <Stack spacing={2.5}>

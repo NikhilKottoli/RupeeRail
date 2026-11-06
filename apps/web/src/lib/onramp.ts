@@ -29,6 +29,11 @@ export function parseOnrampReturn(search: string): OnrampReturn | null {
   };
 }
 
+/** Razorpay's redirect came back with a signature that didn't check out, so the backend names no order. */
+export function isUnverifiedReturn(search: string): boolean {
+  return parseOnrampReturn(search) === null && new URLSearchParams(search).get("payment") === "unverified";
+}
+
 /** The same URL without the onramp return parameters, so a reload doesn't show it again. */
 export function stripOnrampReturn(href: string): string {
   const url = new URL(href);

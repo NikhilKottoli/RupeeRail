@@ -6,7 +6,8 @@ How "the INR arrived" is known depends on COLLECT_RAIL (app/environment.py):
   razorpay  each order gets a Razorpay Payment Link; the browser callback and the webhook only *nudge*
             confirm_razorpay(), which fetches the link from Razorpay and pays only if it is paid in
             full, in INR, for this order. Nudges are recorded (notified_at) so reconcile() retries
-            after a crash, a Razorpay API error or a failed transaction.
+            after a crash, a Razorpay API error or a failed transaction. reconcile() also checks every
+            open link, so a payment is still found if its callback and webhook both go missing.
 
 Order status: AWAITING_FIAT -> PAYING -> PAID, or AWAITING_FIAT -> EXPIRED (link expired/cancelled).
 Paying twice is impossible: a per-order lock + DB compare-and-set here, and onrampDone(orderId) onchain.
@@ -245,7 +246,8 @@ class OnrampService:
 
     async def reconcile(self) -> dict[str, str]:
         out: dict[str, str] = {}
-        for link in self.store.razorpay_links_to_reconcile():
+        open_after = int(self.clock()) - FORGET_PENDING_AFTER_SEC
+        for link in self.store.razorpay_links_to_reconcile(open_after):
             if self._lock(link["order_id"]).locked():
                 continue  # a callback/webhook is handling it right now
             out[link["order_id"]] = await self.confirm_razorpay(link["link_id"])

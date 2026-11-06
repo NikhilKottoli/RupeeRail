@@ -204,6 +204,9 @@ async def config(request: Request) -> dict:
         "limits": {k: str(v) for k, v in ctx.settings.limits().items()},
         "refundReasons": {str(k): v for k, v in REFUND_REASONS.items()},
         "statuses": list(PUBLIC_STATUSES),
+        # The web app offers Buy only on the razorpay rail: the manual rail's UPI ID is a placeholder until set.
+        "onramp": {"rail": ctx.settings.collect_rail,
+                   "testMode": bool(ctx.onramp.razorpay and ctx.onramp.razorpay.creds.test_mode)},
     }
 
 

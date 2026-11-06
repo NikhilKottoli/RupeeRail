@@ -22,12 +22,15 @@ const CONFIG = {
   spreadBps: 80, quoteTtlSec: 90,
   limits: { minInrPaise: "100", maxInrPaise: "100000", dailyUserInrPaise: "500000" },
   chains: { arc: chain("Arc Testnet", "USDC", 5042002), whitechain: chain("Whitechain Sepolia", "USDT", 1874) },
+  onramp: { rail: "razorpay", testMode: false },
 };
 
 interface Backend {
   created: Record<string, string>[];
   statuses: string[]; // returned in order by GET /onramp/{id}; the last one repeats
   createError?: { status: number; error: string; message: string };
+  onramp?: { rail: string; testMode: boolean } | null;
+  lastError?: string;
 }
 
 async function mockApi(page: Page, overrides: Partial<Backend> = {}): Promise<Backend> {
@@ -39,14 +42,17 @@ async function mockApi(page: Page, overrides: Partial<Backend> = {}): Promise<Ba
     checkout: { provider: "razorpay", url: RAZORPAY, linkId: "plink_T1", expiresAt: String(Math.floor(Date.now() / 1000) + 960),
                 paymentId: status === "AWAITING_FIAT" ? null : "pay_T1" },
     status, paidTx: status === "PAID" ? `0x${"87".repeat(32)}` : null,
-    explorer: status === "PAID" ? `https://explorer.testnet.arc.io/tx/0x${"87".repeat(32)}` : null, lastError: null,
+    explorer: status === "PAID" ? `https://explorer.testnet.arc.io/tx/0x${"87".repeat(32)}` : null, lastError: backend.lastError ?? null,
   });
 
   await page.route(/\/(config|onramp)(\/|\?|$)/, async (route) => {
     const request = route.request();
     if (request.resourceType() === "document") return route.fallback();
     const p = new URL(request.url()).pathname;
-    if (p === "/config") return json(route, CONFIG);
+    if (p === "/config") {
+      const { onramp: _, ...rest } = CONFIG;
+      return json(route, backend.onramp === null ? rest : { ...rest, onramp: backend.onramp ?? CONFIG.onramp });
+    }
     if (p === "/onramp" && request.method() === "POST") {
       if (backend.createError) {
         const { status, error, message } = backend.createError;
@@ -131,4 +137,45 @@ test("amounts outside the limits are refused before asking the server", async ({
   await expect(page.getByText("Enter between ₹1 and ₹1,000")).toBeVisible();
   await expect(page.getByRole("button", { name: "Continue" })).toBeDisabled();
   expect(backend.created).toEqual([]);
+});
+
+for (const [name, onramp] of [["the manual rail", { rail: "manual", testMode: false }], ["a backend without the rail", null]] as const) {
+  test(`Buy isn't offered on ${name}`, async ({ page }) => {
+    await injectWallet(page, { key: KEY });
+    await mockApi(page, { onramp });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Connect Test Wallet" }).click();
+    await expect(page.getByRole("button", { name: "History", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Buy", exact: true })).toHaveCount(0);
+  });
+}
+
+test("test-mode keys are called out before anyone pays", async ({ page }) => {
+  await injectWallet(page, { key: KEY });
+  await mockApi(page, { onramp: { rail: "razorpay", testMode: true } });
+  await openBuy(page);
+  await expect(page.getByText(/Test mode: Razorpay won't charge real money/)).toBeVisible();
+});
+
+test("live keys show no test-mode note", async ({ page }) => {
+  await injectWallet(page, { key: KEY });
+  await mockApi(page);
+  await openBuy(page);
+  await expect(page.getByText(/Test mode/)).toHaveCount(0);
+});
+
+test("a payment that didn't match the order asks for support, and doesn't promise a retry", async ({ page }) => {
+  await mockApi(page, { statuses: ["AWAITING_FIAT"], lastError: "mismatch: paid 1 INR for an order of 1000 INR paise" });
+  await page.goto(`/?onramp=${ORDER}&payment=received`);
+  await expect(page.getByText(/didn't match the order, so no tokens were sent/)).toBeVisible();
+  await expect(page.getByText(/We keep retrying/)).toHaveCount(0);
+});
+
+test("a return that fails its signature check is explained, once", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/?onramp=&payment=unverified");
+  await expect(page.getByText(/couldn't check that return from Razorpay/)).toBeVisible();
+  await expect(page).toHaveURL("http://127.0.0.1:4173/");
+  await page.reload();
+  await expect(page.getByText(/couldn't check that return from Razorpay/)).toHaveCount(0);
 });

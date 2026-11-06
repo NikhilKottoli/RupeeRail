@@ -107,9 +107,11 @@ export default function OnrampStatus({ config, orderId, justPaid = false, showPa
         )}
       </GroupedList>
 
-      {order.lastError && !final && (
+      {order.lastError && !final && (order.lastError.startsWith("mismatch") ? (
+        <Alert severity="error">This payment didn't match the order, so no tokens were sent. Contact support with the receipt above.</Alert>
+      ) : (
         <Alert severity="warning">Taking longer than usual. We keep retrying, and your payment is safe.</Alert>
-      )}
+      ))}
       {order.status === "FAILED" && order.lastError && <Alert severity="error">{order.lastError}</Alert>}
 
       {order.status === "AWAITING_FIAT" && !justPaid && order.payTo && !order.checkout && (

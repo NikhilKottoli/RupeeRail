@@ -39,14 +39,3 @@ test("with reduced motion, nothing moves on a press or on entry", async ({ page 
   const animation = await page.locator(".rr-stagger > *").first().evaluate((element) => getComputedStyle(element).animationName);
   expect(animation).toBe("none");
 });
-
-test("the Buy tab can be left out of a build", async ({ page }) => {
-  test.skip(process.env.E2E_BUY_TAB !== "off", "only for a build made with VITE_BUY_TAB=off");
-  await injectWallet(page, { key: KEY });
-  await page.route("**/config", (route) => route.fulfill({ json: { chains: {}, limits: { minInrPaise: "100", maxInrPaise: "100000" } } }));
-  await page.goto("/");
-  await page.getByRole("button", { name: /^Connect/ }).click();
-  await expect(page.getByRole("button", { name: "Pay", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "History", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Buy", exact: true })).toHaveCount(0);
-});
