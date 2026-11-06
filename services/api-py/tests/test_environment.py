@@ -39,7 +39,9 @@ def use(monkeypatch, **env) -> Settings:
 # ---- dev: unchanged ----------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("env", [{}, {"APP_ENV": "dev"}, {"APP_ENV": "dev", "PAYOUT_RAIL": "phone"}])
+@pytest.mark.parametrize("env", [{}, {"APP_ENV": ""}, {"APP_ENV": "   "}, {"APP_ENV": "DEV"},
+                                 {"APP_ENV": "", "PAYOUT_RAIL": "", "COLLECT_RAIL": " "},
+                                 {"APP_ENV": "dev"}, {"APP_ENV": "dev", "PAYOUT_RAIL": "phone"}])
 def test_dev_runs_the_same_stub_as_before(monkeypatch, env):
     s = use(monkeypatch, **env)
     assert s.payout_command == ORIGINAL_STUB

@@ -50,17 +50,23 @@ COLLECT_RAILS = {
 DEFAULT_RAILS = {AppEnv.DEV: ("stub", "manual"), AppEnv.PROD: ("razorpayx", "razorpay")}
 
 
+def _value(environ, var: str, default: str) -> str:
+    """The variable, lowercased; unset, empty or blank means `default`."""
+    return (environ.get(var) or "").strip().lower() or default
+
+
 def _pick(table: dict[str, Rail], var: str, default: str, environ) -> Rail:
-    name = (environ.get(var) or default).strip().lower()
+    name = _value(environ, var, default)
     if name not in table:
         raise ValueError(f"{var} must be one of {sorted(table)}, not {name!r}")
     return table[name]
 
 
 def current_env(environ=None) -> AppEnv:
-    raw = (os.environ if environ is None else environ).get("APP_ENV") or "dev"
+    """Unset, empty or blank APP_ENV is dev."""
+    raw = _value(os.environ if environ is None else environ, "APP_ENV", AppEnv.DEV.value)
     try:
-        return AppEnv(raw.strip().lower())
+        return AppEnv(raw)
     except ValueError:
         raise ValueError(f"APP_ENV must be one of {[e.value for e in AppEnv]}, not {raw!r}") from None
 
