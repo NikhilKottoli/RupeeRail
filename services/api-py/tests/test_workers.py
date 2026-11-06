@@ -324,3 +324,49 @@ async def test_keeper_tick_reads_onchain_and_acts(store, chain, user, keys):
     assert store.get_payment(ids["early"])["releasable_at"] is None
     chain.sent.clear()
     assert await Keeper({"arc": chain}, store, keys.paymaster).tick() == {}
+
+
+# ---- settler: one action per offramp at a time (regression: double refund race) ---------------
+
+from dataclasses import dataclass, field  # noqa: E402
+
+from .conftest import FakeChain  # noqa: E402
+
+
+@dataclass
+class InFlightChain(FakeChain):
+    """A send takes a moment to land, so the chain still shows LOCKED while the tx is in flight."""
+
+    attempts: list = field(default_factory=list)
+
+    async def send(self, account, fn, args):
+        self.attempts.append(fn)
+        await asyncio.sleep(0.05)
+        return await super().send(account, fn, args)
+
+
+async def test_direct_refund_and_settler_loop_never_double_send(store, user, keys):
+    chain = InFlightChain()
+    locked_row(store, chain, user.address)
+    settler = Settler({"arc": chain}, store, keys.settler)
+    direct = asyncio.create_task(settler.refund("arc", ID, 3))   # e.g. the payout runner after a failed payout
+    await asyncio.sleep(0.01)                                     # pending_refund is set, refund tx in flight
+    await settler.tick()                                          # background loop runs mid-flight
+    assert await direct == "refunded"
+    await settler.tick()                                          # and again after it landed
+    assert chain.attempts == ["refundOfframp"], chain.attempts    # exactly one send attempt
+    row = store.get_payment(ID)
+    assert row["status"] == "REFUNDED" and row["pending_refund"] is None
+
+
+async def test_direct_complete_and_settler_loop_never_double_send(store, user, keys):
+    chain = InFlightChain()
+    locked_row(store, chain, user.address, locked_at=chain.now - 20)   # already past completableAt
+    store.update_payment(ID, dispatch_state="DISPATCHED")
+    settler = Settler({"arc": chain}, store, keys.settler)
+    direct = asyncio.create_task(settler.complete("arc", ID))
+    await asyncio.sleep(0.01)
+    await settler.tick()
+    assert await direct == "completed"
+    await settler.tick()
+    assert chain.attempts == ["completeOfframp"], chain.attempts

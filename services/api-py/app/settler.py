@@ -2,6 +2,10 @@
 
 Every action first reads the onchain status, so calling it twice (or after a crash) is a no-op
 rather than a second transfer. The loop retries pending refunds and completions until they land.
+
+Actions on the same offramp are serialised by a per-id lock, and the status is read inside it.
+Without this, a direct refund (e.g. from the payout runner) and the background loop could both
+see LOCKED while the first transaction was still in flight and both send.
 """
 
 from __future__ import annotations
@@ -37,6 +41,16 @@ class Settler:
         self.clock = clock
         self.last_error: str | None = None
         self._busy: set[str] = set()
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _lock(self, id_: str) -> asyncio.Lock:
+        """One lock per offramp id, shared by every settler action on it."""
+        return self._locks.setdefault(id_.lower(), asyncio.Lock())
+
+    def busy(self, id_: str) -> bool:
+        """True while an action on this offramp is running (its transaction may be in flight)."""
+        lock = self._locks.get(id_.lower())
+        return bool(lock and lock.locked())
 
     def _publish(self, kind: str, **data: Any) -> None:
         if self.hub:
@@ -48,6 +62,10 @@ class Settler:
 
     # ---- complete ---------------------------------------------------------------------------
     async def complete(self, chain: str, id_: str) -> str:
+        async with self._lock(id_):
+            return await self._complete(chain, id_)
+
+    async def _complete(self, chain: str, id_: str) -> str:
         c = self.clients[chain]
         p = self.store.get_payment(id_) or {}
         payout_ref = p.get("payout_ref") or default_payout_ref(id_)
@@ -77,6 +95,10 @@ class Settler:
     async def refund(self, chain: str, id_: str, reason: int) -> str:
         if not 1 <= reason <= 4:
             raise ValueError("refund reason must be 1-4")
+        async with self._lock(id_):
+            return await self._refund(chain, id_, reason)
+
+    async def _refund(self, chain: str, id_: str, reason: int) -> str:
         c = self.clients[chain]
         self.store.ensure_payment(id_, chain)
         st = await c.offramp_state(id_)
@@ -96,6 +118,10 @@ class Settler:
 
     # ---- reverse ----------------------------------------------------------------------------
     async def reverse(self, chain: str, id_: str) -> str:
+        async with self._lock(id_):
+            return await self._reverse(chain, id_)
+
+    async def _reverse(self, chain: str, id_: str) -> str:
         c = self.clients[chain]
         st = await c.offramp_state(id_)
         if st.status != COMPLETED:
@@ -121,7 +147,7 @@ class Settler:
 
     # ---- loop -------------------------------------------------------------------------------
     async def _guarded(self, key: str, coro) -> str | None:
-        if key in self._busy:
+        if key in self._busy or self.busy(key):  # skip ids with an action already in flight; retry next tick
             coro.close()
             return None
         self._busy.add(key)
