@@ -13,14 +13,17 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import type { SwapResult } from "@circle-fin/swap-kit";
 import { api, type Account, type AppConfig, type Quote } from "../lib/api";
 import { formatInr } from "../lib/format";
 import { rememberPayment } from "../lib/localPayments";
 import { decodeImageFile } from "../lib/qrImage";
 import { paiseToRupeesString, parseUpiQr, QrError, rupeesToPaise, type ParsedQr } from "../lib/upi";
 import { ensureChain, signTypedData, splitSignature, walletErrorMessage, type Eip1193Provider } from "../lib/wallet";
+import { shouldOfferSwap } from "../lib/swap";
 import PaymentStatus from "./PaymentStatus";
 import ScanDialog from "./ScanDialog";
+import SwapCard, { SwapSuccess } from "./SwapCard";
 
 interface Props {
   config: AppConfig;
@@ -54,6 +57,8 @@ export default function PayScreen({ config, provider, address }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [swapBusy, setSwapBusy] = useState(false);
+  const [swapResult, setSwapResult] = useState<SwapResult | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const chain = config.chains[chainKey];
@@ -132,6 +137,18 @@ export default function PayScreen({ config, provider, address }: Props) {
     }
   };
 
+  /** After a swap: show the receipt, re-read the balance, then ask for a fresh quote (the old one may have expired). */
+  const afterSwap = async (result: SwapResult) => {
+    setSwapResult(result);
+    try {
+      setAccount(await api.account(chainKey, address));
+    } catch {
+      setError("The swap went through, but we couldn't refresh your balance. Go back and try again.");
+      return;
+    }
+    await getQuote();
+  };
+
   const pay = async () => {
     if (!quote) return;
     setError(null);
@@ -162,6 +179,7 @@ export default function PayScreen({ config, provider, address }: Props) {
     setQr(null);
     setQuote(null);
     setPaymentId(null);
+    setSwapResult(null);
     setError(null);
     setInr("");
     setStage("scan");
@@ -187,6 +205,7 @@ export default function PayScreen({ config, provider, address }: Props) {
   if (stage === "review" && quote) {
     const expired = secondsLeft <= 0;
     const tooLow = account !== null && BigInt(account.balance) < BigInt(quote.intent.amount);
+    const offerSwap = shouldOfferSwap(chain, tooLow);
     return (
       <Stack spacing={2}>
         <Typography variant="h5" component="h2">Review payment</Typography>
@@ -208,17 +227,36 @@ export default function PayScreen({ config, provider, address }: Props) {
             </Stack>
           </CardContent>
         </Card>
-        {tooLow && <Alert severity="warning">Your wallet doesn't have enough {quote.display.symbol} for this payment.</Alert>}
+        {tooLow && !offerSwap && (
+          <Alert severity="warning">Your wallet doesn't have enough {quote.display.symbol} for this payment.</Alert>
+        )}
+        {offerSwap && account && (
+          <SwapCard
+            chainKey={chainKey}
+            chain={chain}
+            provider={provider}
+            address={address}
+            balance={BigInt(account.balance)}
+            required={BigInt(quote.intent.amount)}
+            balanceText={account.balanceFormatted}
+            requiredText={quote.display.amount}
+            symbol={quote.display.symbol}
+            disabled={!!busy}
+            onBusyChange={setSwapBusy}
+            onSwapped={afterSwap}
+          />
+        )}
+        {swapResult && <SwapSuccess result={swapResult} chain={chain} />}
         {errorAlert}
         {busyLine}
         {expired ? (
-          <Button variant="contained" size="large" disabled={!!busy} onClick={getQuote}>Get a new rate</Button>
+          <Button variant="contained" size="large" disabled={!!busy || swapBusy} onClick={getQuote}>Get a new rate</Button>
         ) : (
-          <Button variant="contained" size="large" disabled={!!busy || tooLow} onClick={pay}>
+          <Button variant="contained" size="large" disabled={!!busy || swapBusy || tooLow} onClick={pay}>
             Pay · rate held for {secondsLeft}s
           </Button>
         )}
-        <Button disabled={!!busy} onClick={() => { setError(null); setStage("details"); }}>Back</Button>
+        <Button disabled={!!busy || swapBusy} onClick={() => { setError(null); setSwapResult(null); setStage("details"); }}>Back</Button>
       </Stack>
     );
   }
