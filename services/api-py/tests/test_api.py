@@ -530,3 +530,13 @@ def test_view_token_is_derived_from_the_id_when_a_secret_is_set(env):
     assert client.get(f"/offramp/{q['id']}", headers={"x-view-token": "0" * 64}).json()["payee"] is None
     assert client.get(f"/offramp/{q['id']}").json()["payee"] is None
 
+
+def test_raw_qr_goes_only_to_a_view_token_holder(env):
+    client, ctx, chain, user = env
+    q = quote(client, user).json()
+    assert client.get(f"/offramp/{q['id']}", headers={"x-view-token": q["viewToken"]}).json()["qrText"] == QR
+    assert client.get(f"/offramp/{q['id']}").json()["qrText"] is None
+    assert client.get(f"/offramp/{q['id']}", headers={"x-view-token": "0" * 32}).json()["qrText"] is None
+    ctx.settings.expose_payee_by_id = True  # this setting exposes the payee, and must not expose the raw QR
+    assert client.get(f"/offramp/{q['id']}").json()["qrText"] is None
+

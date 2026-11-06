@@ -230,6 +230,18 @@ def test_payment_comes_from_the_view_with_onchain_amount():
     assert p == {"lockedAt": "1700000000", "inrPaise": "1000", "upiId": VPA, "payeeName": "Chai Point", "qrText": None}
 
 
+def test_the_merchants_raw_qr_reaches_the_phone_intact(harness, monkeypatch):
+    raw = f"upi://pay?pa={VPA}&pn=Shop&mc=5411&tr=ORDER123&am=10.00&sign=abc"
+    assert ag.payment_from_view(view(qrText=raw))["qrText"] == raw
+    jobs = []
+    real = payer.run_job
+    monkeypatch.setattr(payer, "run_job", lambda job, *a, **k: (jobs.append(job), real(job, *a, **k))[1])
+    agent, _, _, _ = harness(FakeBackend([locked(A)], {A: {**payable(A), "qrText": raw}}), live=False)
+    agent.tick()
+    assert jobs[0]["qrText"] == raw
+    assert payer.build_upi_uri(upi_id=VPA, payee_name="Shop", paise=1000, qr_text=raw) == raw
+
+
 @pytest.mark.parametrize("over,code", [
     ({"onchain": {"status": "NONE"}}, "NOT_READY"),
     ({"onchain": None}, "NOT_READY"),

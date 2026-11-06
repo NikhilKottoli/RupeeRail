@@ -5,7 +5,7 @@ Everything goes out from this machine to the backend, so nothing here listens on
     GET /events                         which offramps were locked (public)
     GET /offramp/{id}?refresh=true      who to pay and how much (x-view-token, derived from the id)
 
-The backend keeps the raw QR private, so the phone pays a QR rebuilt from the UPI ID, name and amount.
+The raw QR comes with the payee, so a merchant's `tr`, `mc` and `sign` fields reach the phone intact.
 Results stay local: the backend is not told whether the phone paid.
 """
 
@@ -55,7 +55,7 @@ def payment_from_view(view: dict) -> dict:
     if not payee.get("upiId"):
         raise BackendRefused(403, "NO_PAYEE", "no payee returned: is VIEW_TOKEN_SECRET the same as the backend's?")
     return {"lockedAt": onchain["lockedAt"], "inrPaise": onchain["inrPaise"], "upiId": payee["upiId"],
-            "payeeName": payee.get("name"), "qrText": None}
+            "payeeName": payee.get("name"), "qrText": view.get("qrText")}
 
 
 def check_api_url(url: str) -> str:
