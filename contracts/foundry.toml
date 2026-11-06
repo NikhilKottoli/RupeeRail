@@ -1,0 +1,28 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+libs = ["lib"]
+out = "out"
+cache_path = "cache"
+solc_version = "0.8.28"
+auto_detect_solc = false
+# Paris avoids PUSH0 / MCOPY so the bytecode deploys on any EVM chain, including
+# chains whose hardfork level is unknown. OpenZeppelin v5.1.0 is vendored for this reason.
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+remappings = [
+  "forge-std/=lib/forge-std/src/",
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+]
+# Fork tests read keys/RPCs from the environment; nothing is hard-coded.
+fs_permissions = []
+
+[fuzz]
+runs = 512
+
+[invariant]
+runs = 128
+depth = 64
+fail_on_revert = false
