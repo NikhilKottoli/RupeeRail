@@ -1,0 +1,15 @@
+{
+  "name": "rupeerail-swap-smoke",
+  "private": true,
+  "type": "module",
+  "description": "Live Arc testnet smoke test for the PWA's EURC → USDC swap path. Sends real testnet transactions.",
+  "scripts": {
+    "smoke": "tsx smoke.ts"
+  },
+  "dependencies": {
+    "@circle-fin/adapter-viem-v2": "1.20.1",
+    "@circle-fin/swap-kit": "1.9.1",
+    "tsx": "4.20.6",
+    "viem": "2.57.16"
+  }
+}
