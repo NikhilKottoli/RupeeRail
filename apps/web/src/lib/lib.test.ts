@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api, type ChainInfo } from "./api";
 import { describeStatus, formatInr, formatUnits } from "./format";
 import { localPayments, rememberPayment } from "./localPayments";
+import { describeOnramp, parseOnrampReturn, recentOnramps, rememberOnramp, stripOnrampReturn } from "./onramp";
 import { paiseToRupeesString, parseUpiQr, QrError, rupeesToPaise } from "./upi";
 import {
   connectWallet, discoverWallets, ensureChain, isUserRejection, metaMaskDeepLink, signTypedData, splitSignature,
@@ -234,5 +235,59 @@ describe("localPayments", () => {
   it("survives corrupt storage", () => {
     localStorage.setItem("rupeerail.payments.0xccc", "{not json");
     expect(localPayments("0xccc")).toEqual({});
+  });
+});
+
+describe("onramp", () => {
+  const ID = "0x" + "AB".repeat(32);
+
+  it("reads the Razorpay return only from a well-formed order id", () => {
+    expect(parseOnrampReturn(`?onramp=${ID}&payment=received`)).toEqual({ orderId: ID.toLowerCase(), payment: "received" });
+    expect(parseOnrampReturn(`?onramp=${ID}&payment=unverified`)?.payment).toBe("unverified");
+    expect(parseOnrampReturn(`?onramp=${ID}&payment=anything`)?.payment).toBeNull();
+    expect(parseOnrampReturn("?onramp=0x1234")).toBeNull();
+    expect(parseOnrampReturn("?onramp=")).toBeNull();
+    expect(parseOnrampReturn("")).toBeNull();
+  });
+
+  it("strips only its own parameters from the URL", () => {
+    expect(stripOnrampReturn(`https://x.app/?onramp=${ID}&payment=received`)).toBe("/");
+    expect(stripOnrampReturn(`https://x.app/?a=1&onramp=${ID}&payment=received#h`)).toBe("/?a=1#h");
+  });
+
+  it("describes each status, and keeps polling only while it can still change", () => {
+    const base = { amount: "0.099062", symbol: "USDC", checkout: null };
+    expect(describeOnramp({ ...base, status: "AWAITING_FIAT" })).toMatchObject({ title: "Waiting for your payment", active: true });
+    expect(describeOnramp({ ...base, status: "AWAITING_FIAT" }, true)).toMatchObject({ title: "Payment received", active: true });
+    expect(describeOnramp({ ...base, status: "PAYING" })).toMatchObject({ title: "Sending 0.099062 USDC", active: true });
+    expect(describeOnramp({ ...base, status: "PAID" })).toMatchObject({ title: "0.099062 USDC sent", tone: "success", active: false });
+    expect(describeOnramp({ ...base, status: "EXPIRED" })).toMatchObject({ tone: "neutral", active: false });
+    expect(describeOnramp({ ...base, status: "FAILED" })).toMatchObject({ tone: "error", active: false });
+  });
+
+  it("remembers recent purchases per wallet, newest first, without duplicates", () => {
+    localStorage.clear();
+    rememberOnramp({ orderId: "0x1", chain: "arc", wallet: "0xAA", createdAt: 1 });
+    rememberOnramp({ orderId: "0x2", chain: "arc", wallet: "0xBB", createdAt: 2 });
+    rememberOnramp({ orderId: "0x1", chain: "arc", wallet: "0xaa", createdAt: 3 });
+    expect(recentOnramps().map((o) => o.orderId)).toEqual(["0x1", "0x2"]);
+    expect(recentOnramps("0xaa").map((o) => o.createdAt)).toEqual([3]);
+    localStorage.setItem("rupeerail.onramps", "not json");
+    expect(recentOnramps()).toEqual([]);
+  });
+
+  it("calls the onramp endpoints", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ orderId: ID }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.onramp("arc", "0xabc", "10");
+    await api.onrampOrder(ID);
+    expect(fetchMock.mock.calls[0][0]).toBe("/onramp");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ chain: "arc", wallet: "0xabc", inr: "10" });
+    expect(fetchMock.mock.calls[1][0]).toBe(`/onramp/${ID}`);
+    vi.unstubAllGlobals();
+  });
+
+  it("explains onramp errors in plain words", () => {
+    expect(new ApiError(409, "POOL_INSUFFICIENT", "raw").message).toBe("We can't sell that much right now. Try a smaller amount.");
   });
 });

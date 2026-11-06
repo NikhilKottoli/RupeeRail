@@ -53,6 +53,8 @@ class FakeChain:
     sent: list[tuple[str, list]] = field(default_factory=list)
     fail: dict[str, ChainError] = field(default_factory=dict)
     onramp_done: set[str] = field(default_factory=set)
+    pool_balance: int = 10**12
+    daily_cap_left: int = 10**12
     get_logs_calls: list[tuple[int, int]] = field(default_factory=list)
     _tx: int = 0
 
@@ -96,6 +98,10 @@ class FakeChain:
     async def call(self, fn, *args):
         if fn == "onrampDone":
             return hex32(args[0]) in self.onramp_done
+        if fn == "poolBalance":
+            return self.pool_balance
+        if fn == "remainingDailyCap":
+            return self.daily_cap_left
         raise NotImplementedError(fn)
 
     async def get_logs(self, frm, to):
@@ -168,6 +174,17 @@ class FakeRunner:
     async def dispatch(self, payment, parsed):
         self.dispatched.append((payment, parsed))
         return "dispatched"
+
+
+@pytest.fixture(autouse=True)
+def hermetic_env(request, monkeypatch, tmp_path):
+    """Unit tests never read the real repo .env (COLLECT_RAIL, Razorpay keys...). Live tests still do."""
+    if request.node.get_closest_marker("live"):
+        return
+    monkeypatch.setenv("RUPEERAIL_ENV_FILE", str(tmp_path / "absent.env"))
+    for name in ("APP_ENV", "COLLECT_RAIL", "PUBLIC_BASE_URL", "WEB_APP_URL", "RAZORPAY_API_KEY",
+                 "RAZORPAY_API_SECRET", "RAZORPAY_WEBHOOK_SECRET"):
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture
