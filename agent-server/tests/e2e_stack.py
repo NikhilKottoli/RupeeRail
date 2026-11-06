@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import socket
 import sqlite3
 import tempfile
 import threading
@@ -163,7 +164,17 @@ def serve(app, port: int) -> threading.Thread:
     return thread
 
 
+def refuse_if_taken(*ports: int) -> None:
+    """Browser tests delete every agent they find. If a real agent server held :8790, they would archive real agents
+    and create real Circle wallets, so stop here instead of letting them reach it."""
+    for port in ports:
+        with socket.socket() as probe:
+            if probe.connect_ex(("127.0.0.1", port)) == 0:
+                raise SystemExit(f"port {port} is in use. Stop whatever is on it, such as a real agent server, before running the browser tests.")
+
+
 def main() -> None:
+    refuse_if_taken(5181, 8791, 8790)
     store = FastAPI()
 
     @store.get("/slow/")

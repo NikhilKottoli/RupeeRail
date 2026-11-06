@@ -26,7 +26,7 @@ Python projects use `uv` and Python 3.12. There's no CI and no configured Python
 
 - **`services/api-py`:** `uv run pytest -m live` makes read-only calls to both testnets. `--dry-run` simulates transactions without broadcasting.
 - **`apps/upi-payer`:** dry run unless `UPI_LITE_LIVE=1`. `main.py check` and `main.py rehearse --upi-id <id> --inr 1` can't tap Pay, so use them to calibrate a phone. `main.py check` needs its `.env`.
-- **`agent-server`:** a run through the extension pays for real unless it's a rehearsal, and so does `app.demo_store`, which requires `--yes`. `uv run python -m tests.e2e_stack` starts the fake off-ramp the extension's tests use. Tests must never use a real `WalletAdmin`, because Circle allows only 5 agent wallets per chain.
+- **`agent-server`:** a run through the extension pays for real unless it's a rehearsal, and so does `app.demo_store`, which requires `--yes`. `uv run python -m tests.e2e_stack` starts the fake off-ramp the extension's tests use. Tests must never use a real `WalletAdmin`, because Circle allows only 5 agent wallets per chain. The extension's browser tests delete every agent they find, so stop any real agent server first. `e2e_stack` refuses to start while `:8790` is in use.
 - **`apps/web`:** `npm run build` also type-checks. Browser tests use installed Chrome at phone size. `e2e/live.spec.ts` sends real testnet transactions and runs only when its environment variables are set.
 - **`contracts`:** run `git submodule update --init --recursive` first. `ARC_RPC_URL` and `WHITECHAIN_RPC_URL` enable the fork tests in `test/fork/`.
 
@@ -53,6 +53,7 @@ There's no shared package between these projects, so a change on one side needs 
 
 - **`viewToken`:** `derive_view_token` in `services/api-py/app/quote_service.py` and `apps/upi-payer/agent.py` must match. Both test files hold the same test vector, and `VIEW_TOKEN_SECRET` must be the same on the server and the payer.
 - **API paths on the shared hostname:** a new top-level route goes in `apps/web/deploy/Caddyfile` and `API_PATHS` in `apps/web/vite.config.ts`. The web app can't use those paths for its own pages.
+- **Hosts the browser calls directly:** `connect-src` in `apps/web/deploy/Caddyfile` must list them, or the feature works everywhere except production. If the backend's `ARC_RPC_URL` changes the Arc RPC in `/config`, change it there too.
 - **UPI QR parsing:** `services/api-py/app/qr.py` has the final say, and `apps/web/src/lib/upi.ts` and `agent-server/app/payment/qr.py` mirror it.
 
 ## Design decisions that aren't obvious

@@ -181,7 +181,9 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
 
     @app.delete("/agents/{agent_id}")
     async def archive_agent(agent_id: str) -> dict:
-        live_agent(agent_id)
+        agent = live_agent(agent_id)
+        if agent["wallet_status"] in BUSY_WALLET_STATES:  # setup would finish afterwards and put the budget back
+            raise HTTPException(409, "the wallet is still being set up")
         current = running()
         if current and current.agent_id == agent_id:
             raise HTTPException(409, "this agent is running")
