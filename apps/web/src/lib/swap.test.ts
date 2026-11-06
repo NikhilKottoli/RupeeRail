@@ -177,6 +177,9 @@ describe("gas is paid from the same USDC", () => {
     expect(gasFeeUnits({ fees: [{ type: "gas", token: "EURC", amount: "0.003" }] } as never)).toBeNull();
     expect(gasFeeUnits({ fees: [{ type: "gas", token: "USDC", amount: null }] } as never)).toBeNull();
     expect(gasFeeUnits({ fees: [{ type: "gas", token: "USDC", amount: "n/a" }] } as never)).toBeNull();
+    // A 0 fee means the service couldn't simulate the swap (seen live for an unfunded address), so use the reserve.
+    expect(gasFeeUnits({ fees: [{ type: "gas", token: "USDC", amount: "0" }] } as never)).toBeNull();
+    expect(gasFeeUnits({ fees: [{ type: "gas", token: "USDC", amount: "0.000000" }] } as never)).toBeNull();
     expect(gasFeeUnits({ fees: [{ type: "provider", token: "EURC", amount: "0.0002" }] } as never)).toBeNull();
     expect(gasFeeUnits({} as never)).toBeNull();
   });
@@ -213,6 +216,8 @@ describe("messages and links", () => {
     // The real service reports gas with 12 decimals.
     expect(gasFeeText({ fees: [{ type: "gas", token: "USDC", amount: "0.017489471475" }] })).toBe("0.01749 USDC");
     expect(gasFeeText({ fees: [{ type: "gas", token: "USDC", amount: null }] })).toBeNull();
+    // A 0 fee is "unknown", so the dialog says the wallet will show it rather than "0 USDC".
+    expect(gasFeeText({ fees: [{ type: "gas", token: "USDC", amount: "0" }] })).toBeNull();
     expect(gasFeeText({})).toBeNull();
   });
   it("words each kind of failure for the user", () => {

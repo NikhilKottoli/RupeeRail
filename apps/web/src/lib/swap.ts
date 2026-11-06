@@ -81,14 +81,16 @@ export function minOutOf(estimate: Pick<SwapEstimate, "stopLimit">): bigint {
 }
 
 /**
- * The swap's network fee in USDC base units, rounded up. Null when the estimate has no gas entry, or reports
- * it in another token, so the caller falls back to GAS_RESERVE.
+ * The swap's network fee in USDC base units, rounded up. Null when the estimate has no gas entry, reports it in
+ * another token, or reports 0 (the service couldn't simulate the swap, e.g. for an unfunded address; a real swap
+ * always costs gas), so the caller falls back to GAS_RESERVE.
  */
 export function gasFeeUnits(estimate: Pick<SwapEstimate, "fees">): bigint | null {
   const fee = estimate.fees?.find((f) => f.type === "gas");
   if (!fee?.amount || String(fee.token).toUpperCase() !== "USDC") return null;
   try {
-    return unitsFromDecimal(fee.amount, SWAP_DECIMALS, "ceil");
+    const units = unitsFromDecimal(fee.amount, SWAP_DECIMALS, "ceil");
+    return units > 0n ? units : null;
   } catch {
     return null;
   }
@@ -187,7 +189,10 @@ export function gasFeeText(estimate: Pick<SwapEstimate, "fees">): string | null 
   // The service reports gas with many decimals (0.017489471475). Show it to 6 places, rounded up.
   let shown = fee.amount;
   try {
-    shown = unitsToDecimal(unitsFromDecimal(fee.amount, SWAP_DECIMALS, "ceil"));
+    const units = unitsFromDecimal(fee.amount, SWAP_DECIMALS, "ceil");
+    // A 0 fee means the service couldn't simulate the swap; the wallet will show the real fee.
+    if (units === 0n) return null;
+    shown = unitsToDecimal(units);
   } catch {
     // keep the raw text
   }
