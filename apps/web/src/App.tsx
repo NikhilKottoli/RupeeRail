@@ -34,6 +34,8 @@ import {
 } from "./lib/wallet";
 
 const WALLET_KEY = "rupeerail.wallet";
+// Set VITE_BUY_TAB=off when building for a server that isn't ready to take Razorpay payments.
+const BUY_ENABLED = import.meta.env.VITE_BUY_TAB !== "off";
 
 interface InstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -48,7 +50,7 @@ export default function App() {
   const [connecting, setConnecting] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
   // Razorpay sends the browser back to /?onramp=<orderId>&payment=received after a purchase.
-  const [returned, setReturned] = useState(() => parseOnrampReturn(window.location.search));
+  const [returned, setReturned] = useState(() => (BUY_ENABLED ? parseOnrampReturn(window.location.search) : null));
   const [tab, setTab] = useState<"pay" | "buy" | "history">(() => (returned ? "buy" : "pay"));
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
@@ -207,7 +209,7 @@ export default function App() {
             }}
           >
             <BottomNavigationAction label="Pay" value="pay" icon={<QrCodeScanner />} />
-            <BottomNavigationAction label="Buy" value="buy" icon={<AddCardOutlined />} />
+            {BUY_ENABLED && <BottomNavigationAction label="Buy" value="buy" icon={<AddCardOutlined />} />}
             <BottomNavigationAction label="History" value="history" icon={<ReceiptLongOutlined />} />
           </BottomNavigation>
         </Paper>
