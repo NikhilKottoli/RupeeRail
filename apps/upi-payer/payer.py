@@ -63,6 +63,7 @@ DEFAULT_DELAYS = {
 BEFORE_PAY_STEPS = ("scan_any_qr", "upload_from_gallery", "image", "done")
 
 VPA_RE = re.compile(r"^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9]{2,64}$")
+HOME_RE = re.compile(r"^scan any\b", re.IGNORECASE)  # the "Scan any\nQR code" shortcut the first tap relies on
 LITE_RE = re.compile(r"\bupi\s*lite\b", re.IGNORECASE)
 PENDING_RE = re.compile(r"\b(processing|pending|in progress|please wait)\b", re.IGNORECASE)
 SUCCESS_RE = re.compile(r"\b(paid|payment successful|payment complete|transaction successful|successful)\b", re.IGNORECASE)
@@ -358,14 +359,40 @@ class Phone:
     def clear_qrs(self) -> None:
         self.adb.run("shell", f"rm -f {PHONE_DIR}/upi_demo_*.png", check=False)
 
+    def open_gpay(self) -> None:
+        self.adb.run("shell", "monkey", "-p", GPAY, "-c", "android.intent.category.LAUNCHER", "1")
+        self.sleep(float(self.cfg.delays["launch"]))
+
+    def go_home(self, attempts: int = 5) -> None:
+        """Gets Google Pay to its home screen, because the tap coordinates only make sense from there.
+
+        Back is pressed only away from home, and no tap happens here, so this can't start a payment.
+        """
+        for _ in range(attempts):
+            if GPAY not in self.foreground():
+                # The notification panel can cover Google Pay, and reopening the app wouldn't close it.
+                self.adb.run("shell", "cmd", "statusbar", "collapse", check=False)
+                self.sleep(0.5)
+                if GPAY not in self.foreground():
+                    self.open_gpay()
+                continue
+            if self.cfg.verify == "off":
+                return
+            texts = self.screen_texts()
+            if texts and any(HOME_RE.match(t) for t in texts):
+                return
+            self.back()
+        if GPAY not in self.foreground():
+            raise NotPaid("Google Pay is not in the foreground (is the phone unlocked?)")
+        raise NotPaid("couldn't get Google Pay to its home screen")
+
     def to_pay_screen(self, uri: str, key: str) -> None:
-        self.push_qr(uri, key)
         self.adb.run("shell", "input", "keyevent", "KEYCODE_WAKEUP")
         if self.cfg.relaunch:
             self.adb.run("shell", "am", "force-stop", GPAY)
-            self.adb.run("shell", "monkey", "-p", GPAY, "-c", "android.intent.category.LAUNCHER", "1")
-            self.sleep(float(self.cfg.delays["launch"]))
-        self.require_gpay_foreground()
+            self.open_gpay()
+        self.go_home()
+        self.push_qr(uri, key)
         for step in BEFORE_PAY_STEPS:
             self.tap(step)
 
@@ -486,12 +513,12 @@ def run_job(job: dict, cfg: Config, adb: Any | None = None, *, clock: Callable[[
         phone.to_pay_screen(uri, key)
         before, problem = phone.wait_for_pay_screen(upi_id=upi_id, payee_name=payee_name, paise=paise)
         if problem:
-            phone.back(2)
+            _quietly(phone.go_home)
             raise NotPaid(f"pay screen check failed: {problem}")
         phone.require_gpay_foreground()
         # Last check before the point of no return: there must be time left to read the result.
         if clock() + after_pay_sec > deadline:
-            phone.back(2)
+            _quietly(phone.go_home)
             raise NotPaid(short_on_time)
 
         pay_tapped = True
@@ -592,6 +619,6 @@ def cmd_rehearse(cfg: Config, adb: Any, upi_id: str, inr: str, payee_name: str |
     print(f"Pay button is expected at ({x}, {y}). Compare it with the screen now: this is where a live run would tap.")
     print(f"PASS: a live run would tap Pay ({cfg.verify})" if not problem else f"FAIL: a live run would stop and refund: {problem}")
     phone.sleep(5)
-    phone.back(2)
+    _quietly(phone.go_home)
     phone.clear_qrs()
     return 0 if not problem else 1
