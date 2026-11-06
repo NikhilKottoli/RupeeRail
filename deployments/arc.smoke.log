@@ -1,0 +1,58 @@
+=== ScanPayVault live smoke test · arc (chain 5042002) · 2026-11-06T06:44:49Z ===
+vault  https://explorer.testnet.arc.io/address/0x1203a10706290d5a3c62bd99d10186d909e89e39
+token  0x3600000000000000000000000000000000000000 (USDC, permit domain v2) · wallet 0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1
+start: wallet token 15563282 (base units) · native 15.563282419988648121
+[0] deployment config
+  ✅ owner = wallet
+  ✅ settler = wallet
+  ✅ token = 0x3600000000000000000000000000000000000000
+  ✅ decimals = 6, completeDelay = 15 s
+  ↳ setLimits(max 11 tokens, 20 tokens/day)  gas=36706  https://explorer.testnet.arc.io/tx/0x58b44d1672b5c111158ad29acfc8a7cc915bf9252f446545cc5059de2814b2c2
+  ✅ limits applied
+  ✅ setLimits by a stranger → reverts with OwnableUnauthorizedAccount
+[1] offramp A (valid UPI QR), gasless-style permit + intent → LOCKED
+  ↳ offramp A  gas=237781  https://explorer.testnet.arc.io/tx/0x55db2ace411a5e19b085796aace4c15b5330292a03d6d15c8fc27e37ef1ddcd8
+  ✅ status = LOCKED
+  ✅ wallet debited exactly 0.1 token
+  ✅ OfframpLocked event carries the exact raw qrText
+  ✅ stored qrHash = keccak256(qrText)
+  ✅ replay the same signed intent → reverts with OfframpIdUsed
+  ✅ invariant: vault balance 100000 ≥ escrow 100000 + pool 0
+[2] completeOfframp before 15 s must fail
+  ✅ complete at t < 15 s → reverts with TooEarly
+  ✅ complete by a stranger → reverts with UnauthorizedSettler
+  ✅ reclaim before 24 h → reverts with TooEarly
+[3] wait for lockedAt + 15 s, then complete → COMPLETED
+  ↳ completeOfframp A  gas=66710  https://explorer.testnet.arc.io/tx/0x5d2850ab4179fb4df20d69213bc9a56dd2ecdf180d98a70d4e7a7045d11059a1
+  ✅ status = COMPLETED
+  ✅ escrow moved to pool (+0.1)
+  ✅ invariant: vault balance 100000 ≥ escrow 0 + pool 100000
+[4] reverseOfframp A within 24 h → REVERSED, paid back to the original user
+  ↳ reverseOfframp A  gas=66777  https://explorer.testnet.arc.io/tx/0x82b4689b8b0c47760bbdb7fd70220edb03b200620cbaae5f7ade4747b6970c51
+  ✅ status = REVERSED
+  ✅ original user got 0.1 back
+  ✅ reverse twice → reverts with InvalidStatus
+  ✅ invariant: vault balance 0 ≥ escrow 0 + pool 0
+[5] offramp B (bad QR) → refundOfframp(INVALID_QR) → REFUNDED
+  ↳ offramp B  gas=219857  https://explorer.testnet.arc.io/tx/0x36f5a06957ad45ca5ea4ff8a6689c615f611b3bf45d77b897dc67274b17656da
+  ↳ refundOfframp B, reason 1 INVALID_QR  gas=64021  https://explorer.testnet.arc.io/tx/0xa62440db4791504781ea73d6b9e7b2bc99627452794d1922b6e35e67a7e3dcd4
+  ✅ status = REFUNDED
+  ✅ user balance fully restored
+  ✅ complete after refund → reverts with InvalidStatus
+  ✅ invariant: vault balance 0 ≥ escrow 0 + pool 0
+[6] pool: fundPool → onramp → emitPayment → withdrawPool
+  ↳ approve vault 0.2  gas=55438  https://explorer.testnet.arc.io/tx/0x1702625a5f04b9e99616e0969a706adf1dc02e9948f0c8b682024945d5e3e6e4
+  ↳ fundPool 0.2  gas=80519  https://explorer.testnet.arc.io/tx/0x77e196f70f948439961de0d62758b6efac322a2e3acbf14ecc1947d29ee4a54e
+  ↳ onramp 0.1 for ₹10  gas=112367  https://explorer.testnet.arc.io/tx/0xdcb8cfb1c825c28dda0b5458581ff774de446600e608f5e4f37903b267e787ca
+  ✅ onramp paid 0.1 to the wallet
+  ✅ onramp with the same orderId → reverts with OnrampAlreadyPaid
+  ✅ onramp larger than the pool → reverts with InsufficientPoolBalance
+  ↳ emitPayment 0.05  gas=71504  https://explorer.testnet.arc.io/tx/0x894e773f4382182127699003c5a1a5ff1772ac0e0746e5991be0ab434ff574e4
+  ✅ daily cap used: 0.15 of 20
+  ✅ withdrawPool beyond pool (escrow untouchable) → reverts with InsufficientPoolBalance
+  ↳ withdrawPool remaining 50000  gas=56409  https://explorer.testnet.arc.io/tx/0xefaec52283ea6c449197211e497791a2f66867c8ed9e884f8e4fa80fab53f8c2
+  ✅ pool = 0 and escrow = 0
+  ✅ invariant: vault balance 0 ≥ escrow 0 + pool 0
+=== end: wallet token 15563282 → 15538638 · 11 txs · gas 0.024643586905782899 native ===
+  ✅ token-neutral: every token came back (gas aside)
+=== RESULT: 34 passed, 0 failed · log: /mnt/linux_data/RupeeRail/deployments/arc.smoke.log ===

@@ -1,0 +1,22 @@
+{
+  "chain": "whitechain-sepolia",
+  "chainId": 1874,
+  "rpc": "https://rpc.testnet.whitechain.io",
+  "explorer": "https://explorer.testnet.whitechain.io",
+  "vault": "0x6f89445d0CD31C26D091Bc47F6C5566E1fBF5982",
+  "token": {
+    "symbol": "USDT",
+    "address": "0xcedfB56113143d55b2358b8CFbB0dEB5Ad2f55a7",
+    "decimals": 6,
+    "permitDomain": {
+      "name": "Tether USD",
+      "version": "1"
+    }
+  },
+  "owner": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+  "settler": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+  "paymaster": "0xEe5658e3479BB162B9a0D45F03e3ac0066A00BC1",
+  "deployTx": "0x4938d7220534c460325d6ed8fc55a52371a8c1ea167bd294392cc1e5f424b289",
+  "deployedBy": "Claude Code (forge script, wallet index 0)",
+  "verified": true
+}
