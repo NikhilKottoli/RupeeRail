@@ -32,7 +32,7 @@ const LEGAL: Item[] = [
     ],
     rupeerail: [
       "RupeeRail converts a stablecoin (USDC on Arc, USDT on Whitechain) into a rupee payment to a UPI merchant, which is the kind of VDA-to-fiat service this answer covers.",
-      "Today RupeeRail runs only on test networks, with test tokens that have no market value.",
+      "ScanPayVault is deployed on Arc testnet, Whitechain Sepolia and Arc mainnet (chain ID 5042). The live web app and backend still settle demos on the testnets; the mainnet vault is funded with real USDC but is not yet wired for public payments.",
     ],
   },
   {
@@ -44,7 +44,7 @@ const LEGAL: Item[] = [
       "The entity must appoint a Designated Director and a Principal Officer responsible for statutory compliance and reporting to FIU-IND, and must file regular returns, including Cash Transaction Reports (CTR), Suspicious Transaction Reports (STR) and Network Transaction Reports (NTR).",
     ],
     rupeerail: [
-      "RupeeRail is not yet registered with FIU-IND, and it doesn't ask users for KYC. You connect a wallet and pay. Registration, KYC checks and a named Principal Officer are needed before it handles real money.",
+      "RupeeRail is not yet registered with FIU-IND, and it doesn't ask users for KYC. You connect a wallet and pay. A mainnet vault does not replace that: registration, KYC checks and a named Principal Officer are still required before real INR offramps go live.",
       "What it does have today: every payment is checked against a per-payment and a daily rupee limit for each wallet, requests are rate-limited, and the backend refunds any locked payment that doesn't match the quote it issued or carries an invalid UPI QR.",
     ],
   },
@@ -86,6 +86,64 @@ const LEGAL: Item[] = [
   },
 ];
 
+interface NextStep {
+  id: string;
+  title: string;
+  body: string[];
+}
+
+/** Concrete steps drawn from gaps this page and the rest of the app already call out. */
+const BEYOND_HACKATHON: NextStep[] = [
+  {
+    id: "register-kyc",
+    title: "Register as a VDASP and add KYC",
+    body: [
+      "Apply to FIU-IND, appoint a Designated Director and Principal Officer, and start CTR, STR and NTR reporting under the PMLA rules.",
+      "Collect Know Your Customer details before a wallet can pay with real funds. Today's per-payment and daily rupee limits stay as a first line of defence.",
+    ],
+  },
+  {
+    id: "mainnet-keys",
+    title: "Wire Arc mainnet and keep production keys separate",
+    body: [
+      "ScanPayVault is already on Arc mainnet at 0xa140978374AAE1637b927C568E584e8fBB9a7cb0, funded with USDC bridged through Circle CCTP from Base. Point the backend, web app and phone payer at that vault only after FIU-IND registration and a production payout rail are ready.",
+      "Use dedicated mainnet operator, paymaster, quote-signer and settler keys—never the hackathon testnet seeds. Keep Whitechain mainnet as a later step once Arc mainnet payments are proven.",
+    ],
+  },
+  {
+    id: "payout-truth",
+    title: "Make \"processed\" mean the merchant was paid",
+    body: [
+      "Today on-chain COMPLETED can arrive before or without a real UPI payout. Wire the phone payer's result back into the backend and the History tab so users and agents trust the same signal.",
+      "Ship a production payout rail (for example RazorpayX) so the API can run as APP_ENV=prod instead of the hackathon's stub and phone-dev rails.",
+    ],
+  },
+  {
+    id: "tax-tds",
+    title: "Deduct TDS and keep tax records",
+    body: [
+      "Extend quotes to withhold 1% TDS under Section 194S where thresholds apply, and deposit it through Form 26QE.",
+      "Keep exposing the History tab's rupee amount, date and tokens spent so users can reconcile gains taxed under Section 115BBH.",
+    ],
+  },
+  {
+    id: "fema-certin",
+    title: "Close FEMA and CERT-In gaps",
+    body: [
+      "Check that a wallet's owner is an Indian resident before offramping real funds, and keep paying only domestic UPI merchants in rupees.",
+      "Adopt a 5-year retention policy for KYC and transaction logs, and a CERT-In incident process that can report within 6 hours.",
+    ],
+  },
+  {
+    id: "agents-bounds",
+    title: "Keep agents autonomous but bounded",
+    body: [
+      "Continue enforcing each agent's on-chain spending cap in code (and Circle wallet limits when mainnet supports them), with the kill switch until a payment is submitted.",
+      "Treat the payer's result—not vault COMPLETED—as success, and keep models from writing an agent's long-lived memory.",
+    ],
+  },
+];
+
 function Paragraphs({ lines }: { lines: string[] }) {
   return (
     <Stack spacing={1.5}>
@@ -105,8 +163,9 @@ export default function ComplianceScreen({ limits }: Props) {
       </Stack>
 
       <Alert severity="info">
-        RupeeRail is a prototype running on Arc testnet and Whitechain Sepolia. It isn't yet a registered virtual digital asset
-        service provider, so don't use it with real funds.
+        ScanPayVault is live on Arc testnet, Whitechain Sepolia and Arc mainnet. The public app still demos on the testnets;
+        the mainnet vault is deployed and funded, but RupeeRail isn't yet a registered virtual digital asset service provider,
+        so don't treat this as a production INR offramp.
         {limits && ` Each payment must be between ${formatInr(limits.minInrPaise)} and ${formatInr(limits.maxInrPaise)}, and each wallet can pay up to ${formatInr(limits.dailyUserInrPaise)} a day.`}
       </Alert>
 
@@ -128,6 +187,27 @@ export default function ComplianceScreen({ limits }: Props) {
           </Accordion>
         ))}
       </Box>
+
+      <Stack spacing={2}>
+        <Stack spacing={1}>
+          <Typography variant="h5" component="h3">Beyond the hackathon</Typography>
+          <Typography color="text.secondary">
+            What RupeeRail still has to do before this can run with real funds—mapped to the gaps above and to how the app works today.
+          </Typography>
+        </Stack>
+        <Box>
+          {BEYOND_HACKATHON.map((step, index) => (
+            <Accordion key={step.id} disableGutters variant="outlined" sx={{ "&:not(:first-of-type)": { borderTop: 0 } }}>
+              <AccordionSummary expandIcon={<ExpandMore />} aria-controls={`${step.id}-content`} id={`${step.id}-header`}>
+                <Typography sx={{ fontWeight: 500 }}>{`${index + 1}. ${step.title}`}</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Paragraphs lines={step.body} />
+              </AccordionDetails>
+            </Accordion>
+          ))}
+        </Box>
+      </Stack>
 
       <Stack spacing={1}>
         <Typography variant="subtitle2" component="h3">Disclaimer</Typography>

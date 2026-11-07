@@ -446,12 +446,17 @@ test("compliance FAQ opens from the top bar, expands an answer, and goes back", 
   await expect(page).toHaveURL(/\/compliance$/);
   await expect(page.getByRole("heading", { name: "Compliance and FAQ" })).toBeVisible();
   await expect(page.getByText("each wallet can pay up to ₹5,000 a day")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Beyond the hackathon" })).toBeVisible();
 
   const question = page.getByRole("button", { name: /What regulatory registrations are required/ });
   await expect(question).toHaveAttribute("aria-expanded", "false");
   await question.click();
   await expect(question).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText(/RupeeRail is not yet registered with FIU-IND/)).toBeVisible();
+
+  const next = page.getByRole("button", { name: /Wire Arc mainnet and keep production keys separate/ });
+  await next.click();
+  await expect(page.getByText(/0xa140978374AAE1637b927C568E584e8fBB9a7cb0/)).toBeVisible();
   await shot(page, "10-compliance");
 
   await page.goBack();
