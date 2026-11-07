@@ -25,10 +25,11 @@ class BudgetTooHigh(Exception):
 class WalletManager:
     def __init__(self, store: AgentStore, admin: WalletAdmin, client: Any, chain: str, max_budget_usdc: Decimal,
                  poll_sec: float = 3.0, wait_sec: float = 90.0, sleep: Callable[[float], None] = time.sleep,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic, reserved: tuple[str, ...] = ()) -> None:
         self.store, self.admin, self.client, self.chain, self.max_budget_usdc = store, admin, client, chain, max_budget_usdc
         self.poll_sec, self.wait_sec, self.sleep, self.clock = poll_sec, wait_sec, sleep, clock
         self.assigning = threading.Lock()
+        self.reserved = {address.lower() for address in reserved}  # wallets another agent server on this Circle account is using
 
     def check_budget(self, usdc: Decimal) -> None:
         if usdc > self.max_budget_usdc:
@@ -58,7 +59,7 @@ class WalletManager:
             return agent["wallet"]
         self.store.set_wallet_state(agent["id"], "creating", "finding a wallet")
         with self.assigning:  # two new agents must not pick the same unassigned wallet
-            taken = self.store.assigned_wallets()
+            taken = set(self.store.assigned_wallets()) | self.reserved
             spare = next((w for w in self.admin.list_wallets() if w.lower() not in taken), None)
             address = spare or self.admin.create_wallet(agent["id"])
             self.store.assign_wallet(agent["id"], address)

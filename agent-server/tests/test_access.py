@@ -189,3 +189,25 @@ def test_a_report_can_change_when_an_unclear_payment_settles():
     store.save_payer_result(KEY, "unknown")
     store.save_payer_result(KEY, "paid")
     assert store.payer_result(KEY) == "paid"
+
+
+# ---- two servers on one Circle account ------------------------------------------------------------
+
+
+def test_a_reserved_wallet_is_never_given_to_a_new_agent():
+    in_use, spare = "0x" + "aa" * 20, "0x" + "bb" * 20
+    backend = Backend()
+    admin = FakeAdmin(backend, wallets=(in_use.upper().replace("0X", "0x"), spare))
+    client = TestClient(create_app(Settings(global_max_inr=30, reserved_wallets=(in_use,)), client=backend, signer_for=lambda wallet: None, store=AgentStore(":memory:"), admin=admin,
+                                   background=lambda work: work(), wallet_options={"poll_sec": 0, "wait_sec": 0, "sleep": lambda _: None}))
+    first = new_agent(client)
+    assert first["wallet"]["address"] == spare
+    second = new_agent(client, name="Second")
+    assert second["wallet"]["address"].lower() not in (in_use, spare)  # it makes a new wallet rather than touch one in use
+    assert ("create", second["id"]) in admin.calls
+    assert not any(call[0] == "approve" and call[1].lower() == in_use for call in admin.calls)
+
+
+def test_reserved_wallets_are_read_from_a_list(monkeypatch):
+    monkeypatch.setenv("AGENT_RESERVED_WALLETS", " 0xAA , 0xBB,")
+    assert Settings.load().reserved_wallets == ("0xAA", "0xBB")

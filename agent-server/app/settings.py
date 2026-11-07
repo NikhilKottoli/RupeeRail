@@ -58,6 +58,7 @@ class Settings:
     arkiv_publisher_token: str = ""
     access_codes: tuple[str, ...] = ()  # when set, every request needs one of these
     open_access: bool = False  # lets a proxied server run with no codes, so anyone on the internet can use its agents
+    reserved_wallets: tuple[str, ...] = ()  # wallets on this Circle account that another agent server is using
     payer_results_token: str = ""  # when set, the payer reports results over the network, not through its ledger file
 
     @classmethod
@@ -85,5 +86,6 @@ class Settings:
             arkiv_publisher_token=e.get("ARKIV_PUBLISHER_TOKEN") or "",
             access_codes=parse_access_codes(e.get("AGENT_ACCESS_CODES") or ""),
             open_access=e.get("AGENT_OPEN_ACCESS") == "1",
+            reserved_wallets=tuple(w.strip() for w in (e.get("AGENT_RESERVED_WALLETS") or "").split(",") if w.strip()),
             payer_results_token=e.get("PAYER_RESULTS_TOKEN") or "",
         )

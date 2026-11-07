@@ -12,6 +12,7 @@ WorkingDirectory=/opt/rupeerail/agent-server
 EnvironmentFile=/etc/rupeerail/agents.env
 # The Circle CLI keeps its login under HOME.
 Environment=HOME=/var/lib/rupeerail-agents
+Environment=PATH=/opt/rupeerail/node/bin:/usr/bin:/bin
 Environment=AGENT_DB=/var/lib/rupeerail-agents/agents.sqlite
 StateDirectory=rupeerail-agents
 StateDirectoryMode=0700

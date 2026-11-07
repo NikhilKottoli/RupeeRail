@@ -128,7 +128,7 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
     decide = decider_factory or (lambda agent, prompt: make_decider(settings, agent, prompt))
     store = store or AgentStore(settings.db_path)
     results = results or (ReportedResults(store.payer_result) if settings.payer_results_token else LedgerResults(settings.payer_ledger))
-    wallets = WalletManager(store, admin or WalletAdmin(), client, settings.chain, settings.max_budget_usdc, **(wallet_options or {}))
+    wallets = WalletManager(store, admin or WalletAdmin(), client, settings.chain, settings.max_budget_usdc, reserved=settings.reserved_wallets, **(wallet_options or {}))
     if outbox is None:
         outbox = ArkivOutbox(store, settings.arkiv_publisher_url, settings.arkiv_publisher_token, settings.chain)
         outbox.start()
