@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 
 interface Props<T extends string> {
   tabs: { value: T; label: string; icon: ReactNode }[];
-  value: T;
+  /** Null when the open page isn't one of the tabs. */
+  value: T | null;
   onChange: (value: T) => void;
 }
 

@@ -438,6 +438,40 @@ test("the backend being down offers a retry", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 });
 
+test("compliance FAQ opens from the top bar, expands an answer, and goes back", async ({ page }) => {
+  await mockApi(page);
+  await injectWallet(page, { key: KEY });
+  await connect(page);
+  await page.getByRole("link", { name: "Compliance and FAQ" }).click();
+  await expect(page).toHaveURL(/\/compliance$/);
+  await expect(page.getByRole("heading", { name: "Compliance and FAQ" })).toBeVisible();
+  await expect(page.getByText("each wallet can pay up to ₹5,000 a day")).toBeVisible();
+
+  const question = page.getByRole("button", { name: /What regulatory registrations are required/ });
+  await expect(question).toHaveAttribute("aria-expanded", "false");
+  await question.click();
+  await expect(question).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText(/RupeeRail is not yet registered with FIU-IND/)).toBeVisible();
+  await shot(page, "10-compliance");
+
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Scan to pay" })).toBeVisible();
+  await page.goForward();
+  await page.getByRole("button", { name: "History" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Compliance and FAQ" })).toHaveCount(0);
+});
+
+test("/compliance loads directly, even with the backend down", async ({ page }) => {
+  await page.route(/\/config$/, (route) => route.abort());
+  await page.goto("/compliance");
+  await expect(page.getByRole("heading", { name: "Compliance and FAQ" })).toBeVisible();
+  await page.getByRole("button", { name: /Is operating a USDC-to-INR off-ramp/ }).click();
+  await expect(page.getByText(/IAMAI\) v\. Reserve Bank of India/)).toBeVisible();
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(page.getByRole("alert")).toContainText("Can't reach RupeeRail");
+});
+
 for (const width of [320, 360, 412, 768, 1280]) {
   test(`nothing overflows sideways at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 700 });
