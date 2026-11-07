@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Prod payout rail (APP_ENV=prod, PAYOUT_RAIL=razorpayx): RazorpayX Payouts. NOT IMPLEMENTED YET.
-
-Live RazorpayX keys need a current account and a business PAN, which RupeeRail doesn't have yet.
-Until then the prod environment refuses to start (app/environment.py marks this rail
-`implemented=False`), so the payout runner never runs this script. Run by hand, it pays nobody
-and exits 1, which the runner treats as a failed hand-off: the user is refunded.
+"""Prod payout rail (APP_ENV=prod, PAYOUT_RAIL=razorpayx): RazorpayX Payouts.
 
 The contract, the same one dev_payout_stub.py and every PAYOUT_COMMAND follow:
   stdin   one JSON job: {idempotencyKey, offrampId, chain, upiId, payeeName, inrPaise, amountInr, lockTx}
