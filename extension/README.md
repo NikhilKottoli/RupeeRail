@@ -29,11 +29,19 @@ The extension holds no keys. It reads the page and carries out actions, while `a
 
    In Chrome, open `chrome://extensions`, turn on Developer mode, choose **Load unpacked**, and select `extension/dist`. Reload it there after each build.
 
+   To skip building, download the zip from the web app's Agents Hub and load the unzipped folder instead. Chrome derives an unpacked extension's ID from its folder, so if you set `AGENT_EXTENSION_ID`, set it to the ID Chrome shows for that folder.
+
 4. **Run an agent.** Click the extension's icon to open the side panel, choose an agent or make one, type a prompt, and set the limit to ₹1.
 
 **This pays for real if the phone payer is running live.** The agent's Circle wallet locks test USDC, and the phone sends real rupees to the QR's payee. Unlock the phone first, or the payment fails and the panel says **Not paid**.
 
 Without `OPENAI_API_KEY`, the agent uses a rule-based decider, which isn't AI and only suits simple stores. Each step in the panel shows what decided it.
+
+## RupeeRail's hosted server
+
+A person with no agent server of their own sees **Use RupeeRail's server** in the panel. Its address is fixed in `src/connection.ts`, and **Stop using it** moves back. See `agent-server/README.md`.
+
+It's an open demo: anyone can read, change and run its agents. It also runs one agent at a time, because there's one phone, so anyone else gets "an agent is already running".
 
 ## Making an agent
 
@@ -73,6 +81,6 @@ npm run build
 npx playwright test
 ```
 
-The tests run the real extension, agent server and mock stores in Chromium against a fake off-ramp, with a throwaway local key for each agent, so they use no testnet, wallet or phone. They skip without the local mock stores.
+The tests run the real extension, agent server and mock stores in Chromium against a fake off-ramp, with a throwaway local key for each agent, so they use no testnet, wallet or phone. They skip without the local mock stores. The stack also serves an invite-only server on `:8794`, for the hosted server test.
 
 Set `E2E_OPENAI=1` to include the tests that use the real model. They use up your OpenAI requests, and `OPENAI_MODEL` chooses the model.

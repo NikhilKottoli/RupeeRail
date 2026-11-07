@@ -25,6 +25,11 @@
       </div>
     </header>
     <p id="home-error" class="note bad" hidden></p>
+    <button id="use-hosted" type="button" hidden>Use RupeeRail's server</button>
+    <div id="hosted-note" class="note" hidden>
+      <p>You're on RupeeRail's shared demo server. Anyone can see, change and run these agents, so keep personal details out.</p>
+      <button id="disconnect" class="text" type="button">Stop using it</button>
+    </div>
     <ul id="agents" class="cards" aria-label="Agents"></ul>
     <button id="new-agent" type="button"><span class="plus" aria-hidden="true"></span>New agent</button>
   </section>
@@ -40,6 +45,7 @@
       </div>
     </div>
     <div id="agent-wallet" class="wallet"></div>
+    <p id="agent-public" class="public-record muted" hidden></p>
     <form id="prompt-form">
       <label id="prompt-label" for="prompt">What should it do?</label>
       <textarea id="prompt" rows="3" required maxlength="500"></textarea>
@@ -83,6 +89,10 @@
       <label for="profile">Things it should know</label>
       <textarea id="profile" rows="5" maxlength="4000"></textarea>
       <p class="muted">Your instructions and these details are sent to OpenAI on every step, so leave out anything you wouldn't send there. They stay on this computer otherwise, and are never published.</p>
+      <label for="category">Category</label>
+      <select id="category"></select>
+      <label class="check"><input id="published" type="checkbox"> Publish a public track record</label>
+      <p class="muted">Publishes this agent's name, avatar, category and wallet to Arkiv, a public database, along with the amount, outcome and transaction of each payment, including earlier ones. Your instructions, details, prompts and sites are never published. Turning this off removes the record from Arkiv, but anyone who already read it keeps their copy, and past transactions stay in the chain's history.</p>
       <label for="sites">Allowed sites, one per line</label>
       <textarea id="sites" rows="2" required placeholder="swiggy.com"></textarea>
       <label for="start-url">Start page</label>

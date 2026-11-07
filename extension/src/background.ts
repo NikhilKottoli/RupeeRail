@@ -7,8 +7,8 @@
  * banner, the run carries on with scripted clicks and doesn't attach again.
  */
 
-const SERVER = "http://127.0.0.1:8790";
-const SOCKET = "ws://127.0.0.1:8790";
+import { getConnection } from "./connection";
+
 const SETTLE_MS = 400;
 const PING_MS = 20_000;
 const SCROLL_SETTLE_MS = 150;
@@ -272,7 +272,8 @@ async function addressKnown(tabId: number): Promise<chrome.tabs.Tab> {
 
 async function start(agentId: string, agent: AgentLook, prompt: string, maxInr: number, rehearse: boolean) {
   if (run) throw new Error("an agent is already running");
-  const response = await fetch(`${SERVER}/agents/${agentId}/runs`, {
+  const connection = await getConnection();
+  const response = await fetch(`${connection.server}/agents/${agentId}/runs`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ prompt, max_inr: maxInr, rehearse }),
@@ -282,7 +283,7 @@ async function start(agentId: string, agent: AgentLook, prompt: string, maxInr: 
   const tab = await chooseTab(body.allowed_domains, body.start_url);
   await chrome.windows.update(tab.windowId, { focused: true }).catch(() => undefined); // once, so the page is visible as it runs
   history = [];
-  const socket = new WebSocket(`${SOCKET}/runs/${body.run_id}`);
+  const socket = new WebSocket(`${connection.socket}/runs/${body.run_id}`);
   const current: Run = {
     runId: body.run_id, agent, prompt, tabId: tab.id!, windowId: tab.windowId, allowed: body.allowed_domains, socket,
     debuggerTab: null, debuggerRefused: false,
@@ -332,7 +333,9 @@ chrome.debugger.onDetach.addListener((source, reason) => {
  */
 async function pollDevQueue(): Promise<void> {
   if (run) return;
-  const response = await fetch(`${SERVER}/dev/next`).catch(() => null);
+  const connection = await getConnection();
+  if (connection.hosted) return; // a hosted server has no development queue
+  const response = await fetch(`${connection.server}/dev/next`).catch(() => null);
   if (!response?.ok) return;
   const next = await response.json();
   if (next.reload) chrome.runtime.reload();

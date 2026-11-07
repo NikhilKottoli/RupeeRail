@@ -368,6 +368,20 @@ test("a marketplace flow: new tab, hidden radios, COD preselected, QR in a frame
 
 const CHEF_INSTRUCTIONS = "You order food for this person from food delivery sites. Choose one dish that fits their request and everything you know about them. Their diet comes first. Don't ask them to choose: pick one yourself.";
 
+test("publishing is off by default, and the switch saves", async ({ panel, request }) => {
+  await makeAgent(request, panel, { name: "Quiet" } as Partial<typeof CHEF>);
+  await panel.getByRole("button", { name: /Quiet/ }).click();
+  await panel.getByRole("button", { name: "Edit agent" }).click();
+  await expect(panel.getByLabel("Publish a public track record")).not.toBeChecked();
+  await expect(panel.getByLabel("Category")).toHaveValue(/.+/);
+  await panel.getByLabel("Publish a public track record").check();
+  await panel.getByLabel("Category").selectOption("groceries");
+  await panel.getByRole("button", { name: "Save" }).click();
+  await panel.getByRole("button", { name: "Edit agent" }).click();
+  await expect(panel.getByLabel("Publish a public track record")).toBeChecked();
+  await expect(panel.getByLabel("Category")).toHaveValue("groceries");
+});
+
 async function orderDinner(panel: Page, store: Page, request: APIRequestContext, profile: string, prompt = "Order dinner", limit = "1") {
   await makeAgent(request, panel, { instructions: CHEF_INSTRUCTIONS, profile, start_url: `${STORE}foodie/` });
   await store.goto(`${STORE}foodie/`);
@@ -476,4 +490,30 @@ test("real Amazon pages, logged out, in a fresh profile", async ({ panel, store,
   console.log("steps:\n" + (await panel.locator("#log li").allInnerTexts()).reverse().join("\n"));
   console.log("tabs:", context.pages().map((p) => p.url().slice(0, 90)).join(" | "));
   await panel.getByRole("button", { name: "Stop" }).click().catch(() => undefined);
+});
+
+test("with no server of its own, the extension can use the hosted one, and a run works over it", async ({ panel, request }) => {
+  const HOSTED = "http://127.0.0.1:8794";
+  const made = await request.post(`${HOSTED}/agents`, { data: CHEF });
+  expect(made.status(), await made.text()).toBe(201);
+  const { id } = await made.json();
+  await expect.poll(async () => (await (await request.get(`${HOSTED}/agents/${id}`)).json()).wallet_status).toBe("ready");
+
+  await panel.route(`${AGENT}/**`, (route) => route.abort()); // nothing is listening on this computer
+  await panel.evaluate((server) => chrome.storage.local.set({ hostedServer: server }), HOSTED);
+  await panel.reload();
+  await expect(panel.locator("#home-error")).toContainText("Can't reach an agent server");
+  await expect(panel.getByRole("button", { name: "New agent" })).toBeHidden();
+
+  await panel.getByRole("button", { name: "Use RupeeRail's server" }).click();
+  await expect(panel.locator("#hosted-note")).toContainText("keep personal details out");
+  await runAgent(panel, "Chef", "Order a cutting chai", "1", true);
+  await expect(outcome(panel)).toContainText("Rehearsed", { timeout: 60_000 });
+
+  await panel.getByRole("button", { name: "Done" }).click();
+  await panel.locator("[data-to='home']").first().click();
+  await panel.getByRole("button", { name: "Stop using it" }).click();
+  await expect(panel.locator("#home-error")).toContainText("Can't reach an agent server");
+  await expect(panel.getByRole("button", { name: "Use RupeeRail's server" })).toBeVisible();
+  await request.delete(`${HOSTED}/agents/${id}`);
 });

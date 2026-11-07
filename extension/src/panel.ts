@@ -3,7 +3,8 @@
  * Everything from the server or a page is set as text, because it can contain text from the web.
  */
 
-const SERVER = "http://127.0.0.1:8790";
+import { getConnection, useHostedServer, useLocalServer } from "./connection";
+
 const POLL_MS = 2500;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -22,10 +23,10 @@ const SETTING_UP = new Set(["pending", "creating", "funding", "approving"]);
 interface Agent {
   id: string; name: string; description: string; avatar: string; colour: string; sites: string[]; start_url: string;
   per_order_max_inr: number; budget_usdc: string; wallet_status: string; wallet_detail: string;
-  instructions?: string; profile?: string;
+  instructions?: string; profile?: string; category?: string; published?: boolean;
   wallet: { address: string; explorer: string; balance?: string; budget_left?: string; symbol?: string; unavailable?: boolean } | null;
 }
-interface Options { templates: any[]; avatars: string[]; colours: string[]; global_max_inr: number; max_budget_usdc: string; }
+interface Options { templates: any[]; avatars: string[]; colours: string[]; categories: string[]; global_max_inr: number; max_budget_usdc: string; }
 
 let options: Options | null = null;
 let current: Agent | null = null;
@@ -46,11 +47,12 @@ function setError(id: string, message: string): void {
 }
 
 async function api<T = any>(path: string, init?: RequestInit): Promise<T> {
+  const connection = await getConnection();
   let response: Response;
   try {
-    response = await fetch(`${SERVER}${path}`, { ...init, headers: { "content-type": "application/json" } });
+    response = await fetch(`${connection.server}${path}`, { ...init, headers: { "content-type": "application/json" } });
   } catch {
-    throw new Error("Can't reach the agent server. Start it, then try again.");
+    throw new Error(connection.hosted ? "Can't reach RupeeRail's agent server. It will retry." : "Can't reach an agent server. Use RupeeRail's, or start one on this computer.");
   }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -115,17 +117,38 @@ function budgetEl(agent: Agent, unit: string): HTMLElement {
 async function showHome(): Promise<void> {
   show("home");
   setError("home-error", "");
+  const { hosted } = await getConnection();
+  $("hosted-note").hidden = !hosted;
   let agents: Agent[] = [];
   try {
     agents = await api<Agent[]>("/agents");
   } catch (e) {
     setError("home-error", (e as Error).message);
+    setConnected(hosted);
     pollTimer = window.setTimeout(showHomeIfVisible, POLL_MS * 2);
     return;
   }
+  setConnected(true);
   renderCards(agents);
   if (agents.some((a) => SETTING_UP.has(a.wallet_status))) pollTimer = window.setTimeout(showHomeIfVisible, POLL_MS);
 }
+
+/** Offers the hosted server only when there's no other. A person with their own server never sees it. */
+function setConnected(connected: boolean): void {
+  $("use-hosted").hidden = connected;
+  $("new-agent").hidden = !connected;
+  if (!connected) $("agents").replaceChildren();
+}
+
+$("use-hosted").addEventListener("click", async () => {
+  await useHostedServer();
+  await showHome();
+});
+
+$("disconnect").addEventListener("click", async () => {
+  await useLocalServer();
+  await showHome();
+});
 
 function showHomeIfVisible(): void {
   if (!$("home-view").hidden) void showHome();
@@ -191,6 +214,7 @@ async function openAgent(id: string, keepPrompt = false): Promise<void> {
   setError("prompt-error", "");
   renderWallet(agent);
   void renderHistory(agent.id);
+  void renderPublicRecord(agent.id);
   if (SETTING_UP.has(agent.wallet_status)) pollTimer = window.setTimeout(() => void refreshAgent(agent.id), POLL_MS);
 }
 
@@ -259,6 +283,31 @@ function renderWallet(agent: Agent): void {
   $("prompt-note").textContent = rehearse.checked
     ? "A rehearsal browses as usual, but can't order or pay, and doesn't use the wallet."
     : ready ? "It pays without asking, up to this limit. You can stop it at any time before it submits." : "It can pay once its wallet is ready. You can rehearse in the meantime.";
+}
+
+/** What anyone can see about this agent. The server reads it back from Arkiv, so it can't just repeat its own history. */
+async function renderPublicRecord(id: string): Promise<void> {
+  const box = $("agent-public");
+  box.hidden = true;
+  const record = await api<any>(`/agents/${id}/public-record`).catch(() => null);
+  if (current?.id !== id || !record?.published) return;
+  box.hidden = false;
+  box.replaceChildren();
+  if (record.unavailable) box.append("Its public record can't be read right now.");
+  else if (!record.listed) box.append("Publishing its public record…");
+  else {
+    const stats = record.stats ?? {};
+    const rupees = Number(stats.paidInrPaise ?? 0) / 100;
+    box.append(`Public record on Arkiv: ${stats.paid ?? 0} paid, ₹${rupees} in total. `);
+  }
+  if (typeof record.page === "string" && record.page.startsWith("https://")) {
+    const link = document.createElement("a");
+    link.href = record.page;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    link.textContent = "See the public page";
+    box.append(link);
+  }
 }
 
 async function renderHistory(id: string): Promise<void> {
@@ -486,6 +535,8 @@ function fillForm(source: any): void {
   $<HTMLTextAreaElement>("sites").value = (source.sites ?? []).join("\n");
   $<HTMLInputElement>("start-url").value = source.start_url ?? "";
   $<HTMLInputElement>("per-order").value = String(source.per_order_max_inr ?? "");
+  $<HTMLSelectElement>("category").value = source.category ?? "other";
+  $<HTMLInputElement>("published").checked = !!source.published;
   renderPickers();
 }
 
@@ -509,6 +560,12 @@ async function openEditor(agent: Agent | null): Promise<void> {
   $<HTMLInputElement>("budget").max = opts.max_budget_usdc;
   $<HTMLInputElement>("new-budget").max = opts.max_budget_usdc;
   $<HTMLInputElement>("save").textContent = agent ? "Save" : "Create agent";
+  $("category").replaceChildren(...opts.categories.map((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name[0].toUpperCase() + name.slice(1);
+    return option;
+  }));
   if (agent) {
     fillForm(agent);
     $<HTMLInputElement>("new-budget").value = agent.budget_usdc;
@@ -555,6 +612,8 @@ $<HTMLFormElement>("agent-form").addEventListener("submit", async (event) => {
     sites: $<HTMLTextAreaElement>("sites").value.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean),
     start_url: $<HTMLInputElement>("start-url").value.trim(),
     per_order_max_inr: Number($<HTMLInputElement>("per-order").value),
+    category: $<HTMLSelectElement>("category").value,
+    published: $<HTMLInputElement>("published").checked,
   };
   save.disabled = true;
   try {
