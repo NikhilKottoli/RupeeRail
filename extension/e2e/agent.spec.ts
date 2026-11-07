@@ -418,6 +418,16 @@ test("a site that ignores scripted clicks still gets a real click on ADD, inside
   await expect(outcome(panel)).toContainText("Stopped", { timeout: 15_000 });
 });
 
+test("a hover zoom left open by the pointer doesn't stop a real click on the button it covers", async ({ panel, store, request }) => {
+  await makeAgent(request, panel, { start_url: `${STORE}hover/` });
+  await store.goto(`${STORE}hover/`);
+  await store.bringToFront();
+  await runAgent(panel, "Chef", 'SCRIPT:["click:Open product","click:Add to cart","need_help"]');
+  await expect(store.locator("#add")).toHaveText("Added", { timeout: 30_000 });
+  await panel.getByRole("button", { name: "Stop" }).click();
+  await expect(outcome(panel)).toContainText("Stopped", { timeout: 15_000 });
+});
+
 test("the same prompt gets a vegetarian dish for a vegetarian", async ({ panel, store, request }) => {
   test.skip(!process.env.E2E_OPENAI, "needs the real model: set E2E_OPENAI=1");
   test.setTimeout(280_000);
