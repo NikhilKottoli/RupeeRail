@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Everything the extension's browser tests talk to, with nothing real behind it.
 
-Serves the mock store on :5181, a fake off-ramp on :8791, and the real agent server on :8790, reading a throwaway payer
-ledger. Each agent gets a throwaway local key in place of a Circle wallet, so no testnet, wallet or phone is involved.
+Serves the mock store on :5181, a fake off-ramp on :8791, and the real agent server on :8790 and as a hosted one on :8794, reading a throwaway
+payer ledger. Each agent gets a throwaway local key in place of a Circle wallet, so no testnet, wallet or phone is involved.
 
     uv run python -m tests.e2e_stack
 """
@@ -42,6 +42,7 @@ from .test_payment import CHAIN, TOKEN, make_quote
 
 ROOT = Path(__file__).resolve().parents[2]
 FAKE_URL = "http://127.0.0.1:8791"
+HOSTED_PORT = 8794
 LEDGER = Path(tempfile.mkdtemp(prefix="agent-e2e-")) / "payer.sqlite"
 state = {"quotes": [], "submits": [], "payer": "paid"}
 accounts: dict[str, dict] = {}
@@ -181,7 +182,7 @@ def refuse_if_taken(*ports: int) -> None:
 
 
 def main() -> None:
-    refuse_if_taken(5181, 8791, 8790)
+    refuse_if_taken(5181, 8791, 8790, HOSTED_PORT)
     store = FastAPI()
 
     @store.get("/slow/")
@@ -211,9 +212,14 @@ def main() -> None:
     agent = create_app(settings, client=OfframpClient(FAKE_URL), signer_for=lambda wallet: LocalKeySigner(keys[wallet]), results=LedgerResults(str(LEDGER)),
                        decider_factory=decider, store=AgentStore(":memory:"), admin=FakeAdmin(), wallet_options={"poll_sec": 0.1, "wait_sec": 5},
                        machine_options={"poll_sec": 0.3, "wait_sec": 0.3, "result_wait_sec": 6, "time_limit_sec": 300})
+    # Set up as a hosted server is, with its own agents.
+    hosted = create_app(Settings(backend_url=FAKE_URL, signer="local", decider="rule", global_max_inr=1000, open_access=True), client=OfframpClient(FAKE_URL),
+                             signer_for=lambda wallet: LocalKeySigner(keys[wallet]), results=LedgerResults(str(LEDGER)), decider_factory=decider, store=AgentStore(":memory:"),
+                             admin=FakeAdmin(), wallet_options={"poll_sec": 0.1, "wait_sec": 5}, machine_options={"poll_sec": 0.3, "wait_sec": 0.3, "result_wait_sec": 6, "time_limit_sec": 300})
     serve(store, 5181)
     serve(fake_offramp(), 8791)
     serve(agent, 8790)
+    serve(hosted, HOSTED_PORT)
     print("e2e stack ready", flush=True)
     threading.Event().wait()
 

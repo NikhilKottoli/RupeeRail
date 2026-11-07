@@ -4,31 +4,38 @@
 
 A browser sends an Origin header that a page can't forge, so only the extension is let in. Without this, any website
 the user visits could connect to the WebSocket and drive a server that can spend money.
+
+That only stops web pages, and any script can send any Origin. So a server reached through a proxy refuses everything
+unless it has invite codes (AGENT_ACCESS_CODES) or was deliberately opened to everyone (AGENT_OPEN_ACCESS=1).
 """
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import re
 import threading
+import urllib.error
+import urllib.request
 from decimal import Decimal
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from .arkiv_outbox import ArkivOutbox
 from .deciders.base import Decider
 from .deciders.openai_vision import OpenAIDecider
 from .deciders.rule_based import RuleDecider
 from .machine import Machine
-from .models import AgentCreate, AgentFields, AgentPatch, BudgetRequest, QueuedRehearsal, RunRequest
+from .models import AgentCreate, AgentFields, AgentPatch, BudgetRequest, PayerResult, QueuedRehearsal, RunRequest
 from .payment.flow import PaymentFlow
 from .payment.offramp_client import OfframpClient
-from .payment.results import LedgerResults, PayoutResults
+from .payment.results import LedgerResults, PayoutResults, ReportedResults
 from .payment.verify import Constraints
 from .run import AgentRun, profile_terms
 from .settings import Settings
@@ -37,7 +44,7 @@ from .signers.circle_admin import WalletAdmin, WalletAdminError
 from .signers.circle_cli import CircleCliSigner
 from .signers.local_key import LocalKeySigner
 from .store import BUSY_WALLET_STATES, AgentStore
-from .templates import AVATARS, COLOURS, TEMPLATES
+from .templates import AVATARS, CATEGORIES, COLOURS, TEMPLATES
 from .wallets import BudgetTooHigh, WalletManager
 
 log = logging.getLogger("rupeerail.agent")
@@ -45,6 +52,10 @@ EXCHANGE_TIMEOUT_SEC = 30.0
 EXPLORER = "https://explorer.testnet.arc.io/address/"
 # Only needed to edit one agent, so listing agents leaves them out.
 PRIVATE_FIELDS = ("instructions", "profile")
+PUBLIC_CARD_FIELDS = ("name", "avatar", "colour", "category")
+PUBLIC_RECORD_TIMEOUT_SEC = 8.0
+SOCKET_CODE_PREFIX = "rupeerail.code."  # a browser's WebSocket can't set headers, and a URL would end up in logs
+PAYER_RESULTS_PATH = "/payer-results"
 
 
 def origin_ok(origin: str | None, settings: Settings) -> bool:
@@ -53,6 +64,28 @@ def origin_ok(origin: str | None, settings: Settings) -> bool:
     if settings.extension_id:
         return origin == f"chrome-extension://{settings.extension_id}"
     return origin.startswith("chrome-extension://")
+
+
+def same_secret(given: str | None, expected: str) -> bool:
+    return bool(given) and hmac.compare_digest(given.encode(), expected.encode())
+
+
+def bearer(authorization: str | None) -> str | None:
+    scheme, _, value = (authorization or "").partition(" ")
+    return value.strip() if scheme.lower() == "bearer" else None
+
+
+def admitted(code: str | None, headers: Mapping[str, str], settings: Settings) -> bool:
+    if settings.access_codes:
+        return any(same_secret(code, known) for known in settings.access_codes)
+    return settings.open_access or "x-forwarded-for" not in headers  # otherwise, forgetting the codes would open it to the internet
+
+
+def socket_code(socket: WebSocket) -> str | None:
+    for offered in socket.scope.get("subprotocols", []):
+        if offered.startswith(SOCKET_CODE_PREFIX):
+            return offered.removeprefix(SOCKET_CODE_PREFIX)
+    return None
 
 
 def make_signer(settings: Settings, wallet: str) -> Signer:
@@ -69,6 +102,17 @@ def make_decider(settings: Settings, agent: dict, prompt: str) -> Decider:
     return OpenAIDecider(settings.openai_api_key, settings.openai_model, instructions=agent["instructions"], profile=agent["profile"], base_url=settings.openai_base)
 
 
+def read_public_record(backend_url: str, wallet: str) -> dict | None:
+    """The agent's record as the public reader serves it, read from Arkiv. None if it has no card there."""
+    try:
+        with urllib.request.urlopen(f"{backend_url}/arkiv/agents/{wallet}", timeout=PUBLIC_RECORD_TIMEOUT_SEC) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
 def start_thread(work: Callable[[], None]) -> None:
     threading.Thread(target=work, daemon=True).start()
 
@@ -76,14 +120,19 @@ def start_thread(work: Callable[[], None]) -> None:
 def create_app(settings: Settings | None = None, client: Any | None = None, signer_for: Callable[[str], Signer] | None = None,
                results: PayoutResults | None = None, decider_factory: Callable[[dict, str], Decider] | None = None,
                machine_options: dict | None = None, store: AgentStore | None = None, admin: WalletAdmin | None = None,
-               background: Callable[[Callable[[], None]], None] = start_thread, wallet_options: dict | None = None) -> FastAPI:
+               background: Callable[[Callable[[], None]], None] = start_thread, wallet_options: dict | None = None,
+               outbox: ArkivOutbox | None = None, public_record: Callable[[str], dict | None] | None = None) -> FastAPI:
     settings = settings or Settings.load()
     client = client or OfframpClient(settings.backend_url)
-    results = results or LedgerResults(settings.payer_ledger)
     signer_for = signer_for or (lambda wallet: make_signer(settings, wallet))
     decide = decider_factory or (lambda agent, prompt: make_decider(settings, agent, prompt))
     store = store or AgentStore(settings.db_path)
+    results = results or (ReportedResults(store.payer_result) if settings.payer_results_token else LedgerResults(settings.payer_ledger))
     wallets = WalletManager(store, admin or WalletAdmin(), client, settings.chain, settings.max_budget_usdc, **(wallet_options or {}))
+    if outbox is None:
+        outbox = ArkivOutbox(store, settings.arkiv_publisher_url, settings.arkiv_publisher_token, settings.chain)
+        outbox.start()
+    read_record = public_record or (lambda wallet: read_public_record(settings.backend_url, wallet))
     active: dict[str, AgentRun] = {}
     deciders: dict[str, Decider] = {}
     tasks: set[asyncio.Task] = set()
@@ -92,6 +141,7 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
     reload_extension = {"wanted": False}
 
     app = FastAPI(title="RupeeRail agent")
+    app.state.results = results
     pattern = f"chrome-extension://{re.escape(settings.extension_id)}" if settings.extension_id else r"chrome-extension://.*"
     app.add_middleware(CORSMiddleware, allow_origin_regex=pattern, allow_methods=["*"], allow_headers=["*"])
 
@@ -99,6 +149,10 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
     async def block_websites(request: Request, call_next):
         if not origin_ok(request.headers.get("origin"), settings):
             return JSONResponse({"detail": "only the RupeeRail extension may use this server"}, status_code=403)
+        # A browser sends a preflight without credentials, and it reaches no route. The payer has its own token.
+        checked = request.method != "OPTIONS" and request.url.path != PAYER_RESULTS_PATH
+        if checked and not admitted(bearer(request.headers.get("authorization")), request.headers, settings):
+            return JSONResponse({"detail": "This agent server isn't open to you."}, status_code=401)
         return await call_next(request)
 
     def running() -> AgentRun | None:
@@ -145,9 +199,19 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
         view["wallet"] = await asyncio.to_thread(wallet_view, agent["wallet"])
         return view
 
+    @app.post(PAYER_RESULTS_PATH, status_code=202)
+    async def payer_result(body: PayerResult, authorization: str | None = Header(default=None)) -> dict:
+        """How a payer on another machine says how a payment ended. An invite code can't do this, or a guest could claim a payment was made."""
+        if not settings.payer_results_token:
+            raise HTTPException(404, "this server reads the payer's ledger")
+        if not same_secret(bearer(authorization), settings.payer_results_token):
+            raise HTTPException(401, "wrong token")
+        store.save_payer_result(body.key, body.status)
+        return {"saved": True}
+
     @app.get("/templates")
     async def templates() -> dict:
-        return {"templates": TEMPLATES, "avatars": AVATARS, "colours": COLOURS, "global_max_inr": settings.global_max_inr, "max_budget_usdc": str(settings.max_budget_usdc)}
+        return {"templates": TEMPLATES, "avatars": AVATARS, "colours": COLOURS, "categories": CATEGORIES, "global_max_inr": settings.global_max_inr, "max_budget_usdc": str(settings.max_budget_usdc)}
 
     @app.get("/agents")
     async def list_agents() -> list[dict]:
@@ -177,7 +241,14 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
         except ValidationError as e:
             raise HTTPException(422, "; ".join(error["msg"] for error in e.errors())) from None
         check_limit(merged.per_order_max_inr)
-        return await agent_view(store.update_agent(agent_id, merged.model_dump()), private=True)
+        saved = store.update_agent(agent_id, merged.model_dump())
+        if agent["published"] and not saved["published"]:
+            outbox.withdraw(saved, receipts=True)
+        elif saved["published"] and not agent["published"]:
+            outbox.publish_history(saved)
+        elif saved["published"] and any(agent[k] != saved[k] for k in PUBLIC_CARD_FIELDS):
+            outbox.card_changed(saved)
+        return await agent_view(saved, private=True)
 
     @app.delete("/agents/{agent_id}")
     async def archive_agent(agent_id: str) -> dict:
@@ -193,6 +264,8 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
             detail = str(e) if isinstance(e, WalletAdminError) else type(e).__name__
             raise HTTPException(502, f"the budget couldn't be revoked, so the agent wasn't archived: {detail}") from None
         store.archive_agent(agent_id)
+        if agent["published"]:
+            outbox.withdraw(agent, receipts=False)  # its receipts stay until they expire, as a record of what it did
         return {"archived": True}
 
     @app.post("/agents/{agent_id}/budget")
@@ -218,6 +291,22 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
         store.set_wallet_state(agent_id, "pending")
         background(lambda: wallets.setup(agent_id))
         return await agent_view(store.agent(agent_id))
+
+    @app.get("/agents/{agent_id}/public-record")
+    async def public_record_view(agent_id: str) -> dict:
+        """What anyone can see about this agent, read back from Arkiv and not from this server's own database."""
+        agent = get_agent(agent_id)
+        if not agent["published"] or not agent["wallet"]:
+            return {"published": False}
+        page = f"{settings.backend_url}/agents/{agent['wallet']}"
+        try:
+            record = await asyncio.to_thread(read_record, agent["wallet"])
+        except Exception as e:
+            log.warning("couldn't read the public record: %s", type(e).__name__)
+            return {"published": True, "unavailable": True, "page": page}
+        if record is None:
+            return {"published": True, "listed": False, "page": page}
+        return {"published": True, "listed": True, "page": page, "stats": record.get("stats"), "expires_at": record.get("expiresAt"), "working": record.get("working")}
 
     @app.get("/agents/{agent_id}/runs")
     async def agent_runs(agent_id: str) -> list[dict]:
@@ -283,7 +372,8 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
 
     @app.websocket("/runs/{run_id}")
     async def run_socket(socket: WebSocket, run_id: str) -> None:
-        if not origin_ok(socket.headers.get("origin"), settings):
+        code = socket_code(socket)
+        if not origin_ok(socket.headers.get("origin"), settings) or not admitted(code, socket.headers, settings):
             await socket.close(code=4403)
             return
         run = active.get(run_id)
@@ -293,7 +383,7 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
         if running():  # one phone and one tab, so one agent at a time
             await socket.close(code=4409)
             return
-        await socket.accept()
+        await socket.accept(subprotocol=f"{SOCKET_CODE_PREFIX}{code}" if code else None)  # a browser fails the socket unless it's echoed
         loop = asyncio.get_running_loop()
         replies: asyncio.Queue[dict] = asyncio.Queue()
         outgoing: asyncio.Queue[dict] = asyncio.Queue()  # one writer, so messages keep their order
@@ -317,6 +407,8 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
         writing = asyncio.create_task(writer())
         run.state = "starting"
         store.start_run(run.id, run.agent_id, run.prompt, run.rehearse, run.max_paise)
+        if not run.rehearse:
+            outbox.run_started(store.agent(run.agent_id))
 
         def on_submit(offramp_id: str) -> None:
             try:
@@ -343,6 +435,8 @@ def create_app(settings: Settings | None = None, client: Any | None = None, sign
             amount = r.get("amount_inr")
             store.finish_run(run.id, r.get("status", "FAILED"), r.get("detail", ""), run.site, round(amount * 100) if amount is not None else None,
                              r.get("offramp_id"), r.get("txHash"))
+            if not run.rehearse:
+                outbox.run_finished(store.agent(run.agent_id), store.run(run.id))
             run.post({"type": "finished", "result": run.result})
 
         task = asyncio.create_task(drive())

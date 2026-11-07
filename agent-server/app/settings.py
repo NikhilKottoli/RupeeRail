@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
 SERVER_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_BACKEND = "https://rupee-rail.indiasouthcentral.cloudapp.azure.com"
+# Long enough that guessing isn't practical, and only characters a WebSocket subprotocol can carry.
+ACCESS_CODE = re.compile(r"^[A-Za-z0-9_-]{24,}$")
+
+
+def parse_access_codes(value: str) -> tuple[str, ...]:
+    """Refuses a weak or malformed code, so a typo can't leave a server that spends money on an easy password."""
+    codes = tuple(code.strip() for code in value.split(",") if code.strip())
+    if not all(ACCESS_CODE.match(code) for code in codes):
+        raise ValueError("each AGENT_ACCESS_CODES entry needs at least 24 letters, digits, - or _")
+    return codes
 
 
 def load_env_file(path: Path = SERVER_DIR / ".env") -> dict[str, str]:
@@ -43,6 +54,11 @@ class Settings:
     result_wait_sec: float = 120.0
     dev_loop: bool = False  # lets a local tool queue rehearsals. They can't order or pay
     debug_dir: str = ""  # saves each step's page text and screenshot here, so it can hold personal details
+    arkiv_publisher_url: str = ""  # unset, nothing is ever published to Arkiv
+    arkiv_publisher_token: str = ""
+    access_codes: tuple[str, ...] = ()  # when set, every request needs one of these
+    open_access: bool = False  # lets a proxied server run with no codes, so anyone on the internet can use its agents
+    payer_results_token: str = ""  # when set, the payer reports results over the network, not through its ledger file
 
     @classmethod
     def load(cls) -> "Settings":
@@ -65,4 +81,9 @@ class Settings:
             extension_id=e.get("AGENT_EXTENSION_ID") or "",
             dev_loop=e.get("AGENT_DEV_LOOP") == "1",
             debug_dir=e.get("AGENT_DEBUG_DIR") or "",
+            arkiv_publisher_url=e.get("ARKIV_PUBLISHER_URL") or "",
+            arkiv_publisher_token=e.get("ARKIV_PUBLISHER_TOKEN") or "",
+            access_codes=parse_access_codes(e.get("AGENT_ACCESS_CODES") or ""),
+            open_access=e.get("AGENT_OPEN_ACCESS") == "1",
+            payer_results_token=e.get("PAYER_RESULTS_TOKEN") or "",
         )

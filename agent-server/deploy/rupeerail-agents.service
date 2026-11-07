@@ -1,0 +1,27 @@
+[Unit]
+Description=RupeeRail hosted agent server
+After=network-online.target
+Wants=network-online.target
+# Stays stopped until its settings and secrets are in place.
+ConditionFileNotEmpty=/etc/rupeerail/agents.env
+
+[Service]
+User=rupeerail
+Group=rupeerail
+WorkingDirectory=/opt/rupeerail/agent-server
+EnvironmentFile=/etc/rupeerail/agents.env
+# The Circle CLI keeps its login under HOME.
+Environment=HOME=/var/lib/rupeerail-agents
+Environment=AGENT_DB=/var/lib/rupeerail-agents/agents.sqlite
+StateDirectory=rupeerail-agents
+StateDirectoryMode=0700
+ExecStart=/opt/rupeerail/agent-server/.venv/bin/uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8790
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 KNOWN = {"paid", "failed", "unknown", "dry_run"}
 
@@ -33,6 +33,17 @@ class LedgerResults:
         except sqlite3.Error:
             return None
         return row[0] if row and row[0] in KNOWN else None
+
+
+class ReportedResults:
+    """What a payer on another machine has reported, for a server that can't read its ledger."""
+
+    def __init__(self, lookup: Callable[[str], str | None]) -> None:
+        self.lookup = lookup
+
+    def result(self, offramp_id: str) -> str | None:
+        status = self.lookup(offramp_id.lower())
+        return status if status in KNOWN else None
 
 
 def outcome(onchain: str, payer: str | None) -> str | None:

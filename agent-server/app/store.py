@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS agents (
     wallet_status TEXT NOT NULL,
     wallet_detail TEXT NOT NULL,
     created REAL NOT NULL,
-    archived REAL
+    archived REAL,
+    category TEXT NOT NULL DEFAULT 'other',
+    published INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
@@ -49,8 +51,19 @@ CREATE TABLE IF NOT EXISTS runs (
     finished REAL
 );
 CREATE INDEX IF NOT EXISTS runs_by_agent ON runs (agent_id, started DESC);
+CREATE TABLE IF NOT EXISTS arkiv_outbox (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    op TEXT NOT NULL,
+    done REAL
+);
+CREATE TABLE IF NOT EXISTS payer_results (
+    key TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    updated REAL NOT NULL
+);
 """
-EDITABLE = ("name", "description", "avatar", "colour", "instructions", "profile", "sites", "start_url", "per_order_max_inr")
+EDITABLE = ("name", "description", "avatar", "colour", "instructions", "profile", "sites", "start_url", "per_order_max_inr", "category", "published")
 BUSY_WALLET_STATES = ("pending", "creating", "funding", "approving")
 
 
@@ -65,8 +78,17 @@ class AgentStore:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        self._add_new_columns()
         self.db.commit()
         self._recover()
+
+    def _add_new_columns(self) -> None:
+        """A file made by an older version keeps its agents and gains these."""
+        have = {row["name"] for row in self.db.execute("PRAGMA table_info(agents)")}
+        if "category" not in have:
+            self.db.execute("ALTER TABLE agents ADD COLUMN category TEXT NOT NULL DEFAULT 'other'")
+        if "published" not in have:
+            self.db.execute("ALTER TABLE agents ADD COLUMN published INTEGER NOT NULL DEFAULT 0")
 
     def _recover(self) -> None:
         """A restart ends anything that was in progress, so nothing is left looking as if it's still running."""
@@ -78,7 +100,7 @@ class AgentStore:
 
     @staticmethod
     def _agent(row: sqlite3.Row) -> dict:
-        return {**dict(row), "sites": json.loads(row["sites"])}
+        return {**dict(row), "sites": json.loads(row["sites"]), "published": bool(row["published"])}
 
     # ---- agents ---------------------------------------------------------------------------------
 
@@ -86,10 +108,10 @@ class AgentStore:
         agent_id = str(uuid.uuid4())  # also Circle's idempotency key, which must be a UUID
         with self.lock:
             self.db.execute(
-                "INSERT INTO agents (id, name, description, avatar, colour, instructions, profile, sites, start_url, per_order_max_inr, budget_usdc, wallet_status, wallet_detail, created) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending','',?)",
+                "INSERT INTO agents (id, name, description, avatar, colour, instructions, profile, sites, start_url, per_order_max_inr, budget_usdc, wallet_status, wallet_detail, created, category, published) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending','',?,?,?)",
                 (agent_id, fields["name"], fields["description"], fields["avatar"], fields["colour"], fields["instructions"], fields["profile"],
-                 json.dumps(fields["sites"]), fields["start_url"], fields["per_order_max_inr"], budget_usdc, time.time()),
+                 json.dumps(fields["sites"]), fields["start_url"], fields["per_order_max_inr"], budget_usdc, time.time(), fields.get("category", "other"), int(fields.get("published", False))),
             )
             self.db.commit()
         return self.agent(agent_id)
@@ -164,6 +186,17 @@ class AgentStore:
             rows = self.db.execute("SELECT * FROM runs WHERE agent_id = ? ORDER BY started DESC LIMIT ?", (agent_id, limit)).fetchall()
         return [dict(row) for row in rows]
 
+    def run(self, run_id: str) -> dict | None:
+        with self.lock:
+            row = self.db.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+    def locked_runs(self, agent_id: str) -> list[dict]:
+        """Real runs that got as far as locking funds, oldest first."""
+        with self.lock:
+            rows = self.db.execute("SELECT * FROM runs WHERE agent_id = ? AND rehearse = 0 AND offramp_id IS NOT NULL AND finished IS NOT NULL ORDER BY started", (agent_id,)).fetchall()
+        return [dict(row) for row in rows]
+
     def past_runs_text(self, agent_id: str, limit: int = 5) -> list[str]:
         """What the agent gets told about its past: facts recorded by code, with no page or model text."""
         with self.lock:
@@ -175,3 +208,30 @@ class AgentStore:
             site = f" on {row['site']}" if row["site"] else ""
             lines.append(f"{day}: asked {json.dumps(row['prompt'], ensure_ascii=False)}{site}{amount}, result {row['status']}")
         return lines
+
+    # ---- what's waiting to be published ---------------------------------------------------------
+
+    def outbox_add(self, op_id: str, op: str) -> None:
+        with self.lock:
+            self.db.execute("INSERT OR IGNORE INTO arkiv_outbox (id, op) VALUES (?,?)", (op_id, op))
+            self.db.commit()
+
+    def outbox_next(self) -> dict | None:
+        with self.lock:
+            row = self.db.execute("SELECT id, op FROM arkiv_outbox WHERE done IS NULL ORDER BY seq LIMIT 1").fetchone()
+        return dict(row) if row else None
+
+    def outbox_done(self, op_id: str) -> None:
+        with self.lock:
+            self.db.execute("UPDATE arkiv_outbox SET done = ? WHERE id = ?", (time.time(), op_id))
+            self.db.commit()
+
+    def save_payer_result(self, key: str, status: str) -> None:
+        with self.lock:
+            self.db.execute("INSERT OR REPLACE INTO payer_results VALUES (?, ?, ?)", (key.lower(), status, time.time()))
+            self.db.commit()
+
+    def payer_result(self, key: str) -> str | None:
+        with self.lock:
+            row = self.db.execute("SELECT status FROM payer_results WHERE key = ?", (key.lower(),)).fetchone()
+        return row["status"] if row else None

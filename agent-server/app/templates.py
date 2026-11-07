@@ -8,6 +8,8 @@ from __future__ import annotations
 
 AVATARS = ("chef", "shopper", "traveller", "gardener", "student", "doctor", "artist", "musician", "athlete", "mechanic", "scientist", "robot")
 COLOURS = ("saffron", "coral", "rose", "violet", "indigo", "teal", "leaf", "slate")
+# What an agent can be listed under if it publishes a public record. A test keeps these in step with services/arkiv-board.
+CATEGORIES = ("food", "groceries", "shopping", "travel", "bills", "other")
 
 TEMPLATES = (
     {
@@ -16,6 +18,8 @@ TEMPLATES = (
         "description": "Knows what you eat, and orders food for you",
         "avatar": "chef",
         "colour": "saffron",
+        "category": "food",
+        "published": False,
         "instructions": (
             "You order food for delivery for this person from food delivery sites. Only use delivery pages, never Dineout or "
             "table booking pages. Choose one meal that fits their request and "
@@ -37,6 +41,8 @@ TEMPLATES = (
         "description": "",
         "avatar": "robot",
         "colour": "indigo",
+        "category": "other",
+        "published": False,
         "instructions": "",
         "profile": "",
         "profile_hint": "Anything this agent should always know about you",

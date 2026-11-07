@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .payment.verify import origin_allowed
-from .templates import AVATARS, COLOURS
+from .templates import AVATARS, CATEGORIES, COLOURS
 
 ActionType = Literal["click", "type", "scroll", "key", "back", "wait", "done", "need_help", "checkout_reached"]
 
@@ -75,6 +75,15 @@ class AgentFields(BaseModel):
     sites: list[str] = Field(min_length=1, max_length=10)
     start_url: str = Field(max_length=500)
     per_order_max_inr: int = Field(gt=0)
+    category: str = "other"
+    published: bool = False  # off until a person turns it on, because a public record ties this name to its wallet
+
+    @field_validator("category")
+    @classmethod
+    def known_category(cls, value: str) -> str:
+        if value not in CATEGORIES:
+            raise ValueError("unknown category")
+        return value
 
     @field_validator("avatar")
     @classmethod
@@ -116,6 +125,8 @@ class AgentPatch(BaseModel):
     sites: list[str] | None = None
     start_url: str | None = None
     per_order_max_inr: int | None = None
+    category: str | None = None
+    published: bool | None = None
 
 
 class BudgetRequest(BaseModel):
@@ -142,3 +153,9 @@ class PageObservation(BaseModel):
     screenshot_b64: str | None = None
     skipped_hosts: list[str] = Field(default_factory=list)  # frames the extension wouldn't read, being off the agent's sites
     dialog_open: bool = False  # a dialog covers the page, so only its controls are listed
+
+
+class PayerResult(BaseModel):
+    """Only the offramp id and how it ended. The payee and the UTR stay on the payer's machine."""
+    key: str = Field(pattern=r"^0x[0-9a-fA-F]{64}$")
+    status: Literal["paid", "failed", "unknown", "dry_run"]
