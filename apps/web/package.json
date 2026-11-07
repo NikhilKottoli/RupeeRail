@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "pack:extension": "node scripts/pack-extension.mjs",
+    "build": "npm run pack:extension && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test"

@@ -6,10 +6,10 @@ import { VitePWA } from "vite-plugin-pwa";
 const BACKEND = process.env.RUPEERAIL_API_URL ?? "https://rupee-rail.indiasouthcentral.cloudapp.azure.com";
 /** Libraries the app itself needs at load time or offline. Any other node_modules chunk belongs to the lazy swap path. */
 const APP_LIBS = /node_modules[\\/](react|react-dom|react-is|scheduler|@mui|@emotion|@babel|stylis|clsx|prop-types|hoist-non-react-statics|react-transition-group|jsqr|@fontsource)[\\/]/;
-const API_PATHS = /^\/(health|config|account|quote|offramps?|dispute|events|onramp|admin)(\/|$)/;
+const API_PATHS = /^\/(health|config|account|quote|offramps?|dispute|events|onramp|admin|arkiv|agent-api)(\/|$)/;
 
 const proxy = {
-  "^/(health|config|account|quote|offramps?|dispute|events|onramp|admin)(/|$)": {
+  "^/(health|config|account|quote|offramps?|dispute|events|onramp|admin|arkiv|agent-api)(/|$)": {
     target: BACKEND,
     changeOrigin: true,
     secure: true,
@@ -51,7 +51,8 @@ export default defineConfig({
           options: { cacheName: "circle-swap", expiration: { maxEntries: 8 } },
         }],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [API_PATHS],
+        // Without the downloads entry, the service worker could answer a download with the app's own page.
+        navigateFallbackDenylist: [API_PATHS, /^\/downloads\//],
       },
     }),
   ],

@@ -160,3 +160,21 @@ h3 {
     transform: none !important;
   }
 }
+
+/* A receipt that has just arrived. Rows keep their keys across a refresh, so only new ones play this. */
+.rr-arrive {
+  animation: rr-arrive 240ms var(--ease-out);
+}
+
+@keyframes rr-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rr-arrive {
+    animation: none;
+  }
+}

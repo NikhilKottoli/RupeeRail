@@ -9,7 +9,7 @@ const ACCENT = "var(--rr-accent)";
 const ACCENT_CONTAINER = "var(--rr-accent-container)";
 
 /** Material 3 Expressive's scalloped "cookie" shape, as an SVG path. */
-function cookiePath(cx: number, cy: number, radius: number, lobes: number, depth: number) {
+export function cookiePath(cx: number, cy: number, radius: number, lobes: number, depth: number) {
   const points = Array.from({ length: 180 }, (_, i) => {
     const angle = (i / 180) * Math.PI * 2;
     const r = radius * (1 + depth * Math.cos(lobes * angle));
@@ -18,7 +18,7 @@ function cookiePath(cx: number, cy: number, radius: number, lobes: number, depth
   return `M${points.join("L")}Z`;
 }
 
-function sparklePath(cx: number, cy: number, r: number) {
+export function sparklePath(cx: number, cy: number, r: number) {
   const k = r * 0.16;
   return `M${cx} ${cy - r}Q${cx + k} ${cy - k} ${cx + r} ${cy}Q${cx + k} ${cy + k} ${cx} ${cy + r}Q${cx - k} ${cy + k} ${cx - r} ${cy}Q${cx - k} ${cy - k} ${cx} ${cy - r}Z`;
 }

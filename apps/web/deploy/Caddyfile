@@ -5,6 +5,18 @@ rupee-rail.indiasouthcentral.cloudapp.azure.com {
 		reverse_proxy 127.0.0.1:8788
 	}
 
+	# The public, read-only track records from Arkiv. services/arkiv-board, reader-server.ts. Also in API_PATHS.
+	handle /arkiv/* {
+		reverse_proxy 127.0.0.1:8792 {
+			flush_interval -1
+		}
+	}
+
+	# The hosted agent server. It refuses this traffic unless AGENT_OPEN_ACCESS or AGENT_ACCESS_CODES is set. agent-server/deploy. Also in API_PATHS.
+	handle_path /agent-api/* {
+		reverse_proxy 127.0.0.1:8790
+	}
+
 	handle {
 		root * /var/www/rupeerail
 		encode zstd gzip
@@ -19,7 +31,7 @@ rupee-rail.indiasouthcentral.cloudapp.azure.com {
 		# Fingerprinted files never change. Everything that points at them must be checked each time.
 		@assets path /assets/*
 		header @assets Cache-Control "public, max-age=31536000, immutable"
-		@entry path / /index.html /sw.js /registerSW.js /manifest.webmanifest
+		@entry path / /index.html /sw.js /registerSW.js /manifest.webmanifest /downloads/*
 		header @entry Cache-Control "no-cache"
 
 		@manifest path /manifest.webmanifest

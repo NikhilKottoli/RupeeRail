@@ -1,5 +1,6 @@
 import ImageOutlined from "@mui/icons-material/ImageOutlined";
 import QrCodeScanner from "@mui/icons-material/QrCodeScanner";
+import SmartToyOutlined from "@mui/icons-material/SmartToyOutlined";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -28,6 +29,8 @@ interface Props {
   config: AppConfig;
   provider: Eip1193Provider;
   address: string;
+  /** Opens the Agents Hub. */
+  onOpenAgents?: () => void;
 }
 
 // Side by side when both fit, and a stack on the narrowest phones.
@@ -36,7 +39,7 @@ const scanAction = { ...heroAction, flex: "1 1 170px", px: "20px" };
 type Stage = "scan" | "details" | "review" | "status";
 const STAGE_ORDER: Stage[] = ["scan", "details", "review", "status"];
 
-export default function PayScreen({ config, provider, address }: Props) {
+export default function PayScreen({ config, provider, address, onOpenAgents }: Props) {
   const chainKeys = Object.keys(config.chains);
   const [stage, setStage] = useState<Stage>("scan");
   const [scanning, setScanning] = useState(false);
@@ -346,6 +349,11 @@ export default function PayScreen({ config, provider, address }: Props) {
         >
           Upload a photo
         </Button>
+        {onOpenAgents && (
+          <Button variant="outlined" size="large" startIcon={<SmartToyOutlined />} onClick={onOpenAgents} sx={{ ...scanAction, flexBasis: "100%" }}>
+            Make your AI butler do your work and payments
+          </Button>
+        )}
       </Stack>
       <input ref={fileInput} type="file" accept="image/*" hidden onChange={onFile} aria-label="QR code image" />
       {showPaste ? (

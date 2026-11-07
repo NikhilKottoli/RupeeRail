@@ -3,6 +3,7 @@ import AddCardOutlined from "@mui/icons-material/AddCardOutlined";
 import InstallMobileOutlined from "@mui/icons-material/InstallMobileOutlined";
 import QrCodeScanner from "@mui/icons-material/QrCodeScanner";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
+import SmartToyOutlined from "@mui/icons-material/SmartToyOutlined";
 import Alert from "@mui/material/Alert";
 import AppBar from "@mui/material/AppBar";
 import BottomNavigation from "@mui/material/BottomNavigation";
@@ -22,6 +23,7 @@ import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useCallback, useEffect, useRef, useState } from "react";
+import AgentsScreen from "./components/AgentsScreen";
 import BuyScreen from "./components/BuyScreen";
 import ConnectScreen from "./components/ConnectScreen";
 import HistoryScreen from "./components/HistoryScreen";
@@ -29,6 +31,7 @@ import OnrampStatus from "./components/OnrampStatus";
 import PayScreen from "./components/PayScreen";
 import SideNav from "./components/SideNav";
 import { api, type AppConfig } from "./lib/api";
+import { parseAgentsPath } from "./lib/arkiv";
 import { shortAddress } from "./lib/format";
 import { isUnverifiedReturn, parseOnrampReturn, stripOnrampReturn } from "./lib/onramp";
 import {
@@ -37,10 +40,11 @@ import {
 
 const WALLET_KEY = "rupeerail.wallet";
 
-type Tab = "pay" | "buy" | "history";
+type Tab = "pay" | "buy" | "history" | "agents";
 const PAY_TAB = { value: "pay" as const, label: "Pay", icon: <QrCodeScanner /> };
 const BUY_TAB = { value: "buy" as const, label: "Buy", icon: <AddCardOutlined /> };
 const HISTORY_TAB = { value: "history" as const, label: "History", icon: <ReceiptLongOutlined /> };
+const AGENTS_TAB = { value: "agents" as const, label: "Agents", icon: <SmartToyOutlined /> };
 
 interface InstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -57,7 +61,9 @@ export default function App() {
   // Razorpay sends the browser back to /?onramp=<orderId>&payment=received after a purchase.
   const [returned, setReturned] = useState(() => parseOnrampReturn(window.location.search));
   const [unverifiedReturn, setUnverifiedReturn] = useState(() => isUnverifiedReturn(window.location.search));
-  const [tab, setTab] = useState<Tab>(() => (returned ? "buy" : "pay"));
+  // undefined when the address isn't /agents, null for the directory, and otherwise one agent's wallet.
+  const [agentsPath, setAgentsPath] = useState(() => parseAgentsPath(window.location.pathname));
+  const [tab, setTab] = useState<Tab>(() => (returned ? "buy" : agentsPath !== undefined ? "agents" : "pay"));
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const restored = useRef(false);
@@ -66,12 +72,28 @@ export default function App() {
   const sidebar = wide && !!address;
 
   // Buy is offered only when the server collects through Razorpay. The manual rail needs an operator and a real UPI ID.
-  const tabs = config?.onramp?.rail === "razorpay" ? [PAY_TAB, BUY_TAB, HISTORY_TAB] : [PAY_TAB, HISTORY_TAB];
+  const tabs = config?.onramp?.rail === "razorpay" ? [PAY_TAB, BUY_TAB, HISTORY_TAB, AGENTS_TAB] : [PAY_TAB, HISTORY_TAB, AGENTS_TAB];
+
+  const go = useCallback((path: string) => {
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+    setAgentsPath(parseAgentsPath(path));
+  }, []);
 
   const chooseTab = (value: Tab) => {
     setReturned(null);  // the Razorpay return is shown once; coming back to Buy starts fresh
     setTab(value);
+    go(value === "agents" ? "/agents" : "/");
   };
+
+  useEffect(() => {
+    const onPop = () => {
+      const path = parseAgentsPath(window.location.pathname);
+      setAgentsPath(path);
+      setTab((current) => (path !== undefined ? "agents" : current === "agents" ? "pay" : current));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const loadConfig = useCallback(() => {
     setConfigError(null);
@@ -120,7 +142,8 @@ export default function App() {
     setProvider(null);
     setAddress(null);
     setTab("pay");
-  }, []);
+    go("/");
+  }, [go]);
 
   useEffect(() => {
     if (!provider?.on) return;
@@ -194,7 +217,13 @@ export default function App() {
               We couldn't check that return from Razorpay. If you paid, we still confirm it with Razorpay directly, and your tokens are sent once it's confirmed.
             </Alert>
           )}
-          {configError ? (
+          {tab === "agents" ? (
+            <AgentsScreen
+              wallet={agentsPath ?? null}
+              onOpen={(wallet) => go(wallet ? `/agents/${wallet}` : "/agents")}
+              onExit={address ? undefined : () => chooseTab("pay")}
+            />
+          ) : configError ? (
             <Alert severity="error" action={<Button color="inherit" size="small" onClick={loadConfig}>Retry</Button>}>
               {configError}
             </Alert>
@@ -203,16 +232,15 @@ export default function App() {
               <CircularProgress aria-label="Loading" />
             </Box>
           ) : !address || !provider ? (
-            returned ? (
-              <Stack spacing={3}>
-                <OnrampStatus config={config} orderId={returned.orderId} justPaid={returned.payment === "received"} />
-                <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
-              </Stack>
-            ) : (
+            <Stack spacing={3}>
+              {returned && <OnrampStatus config={config} orderId={returned.orderId} justPaid={returned.payment === "received"} />}
               <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
-            )
+              <Button variant="text" startIcon={<SmartToyOutlined />} onClick={() => chooseTab("agents")} sx={{ alignSelf: "center" }}>
+                Explore the Agents Hub
+              </Button>
+            </Stack>
           ) : tab === "pay" ? (
-            <PayScreen key={address} config={config} provider={provider} address={address} />
+            <PayScreen key={address} config={config} provider={provider} address={address} onOpenAgents={() => chooseTab("agents")} />
           ) : tab === "buy" ? (
             <BuyScreen key={address} config={config} address={address} returned={returned} />
           ) : (
