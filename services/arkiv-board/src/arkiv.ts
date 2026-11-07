@@ -4,24 +4,29 @@
  * and no automatic retries. Errors are reduced to fixed messages, because the RPC URL contains the access key.
  */
 
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createPublicClient, createWalletClient, type TxParams } from "@arkiv-network/sdk";
 import { rabdi } from "@arkiv-network/sdk/chains";
-import { custom, http, MethodNotFoundRpcError, type LocalAccount } from "viem";
+import { custom, http, MethodNotFoundRpcError, webSocket, type LocalAccount } from "viem";
 import { getGasPrice } from "viem/actions";
 
 export const RABDI_CHAIN_ID = 7794095;
-const SERVICE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
+export const SERVICE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SINGLE_OP_GAS_FLOOR = 1_000_000n;
+const EXTRA_OP_GAS = 400_000n;
 
+/** The process's environment, over the service's .env if there is one. The deployed reader has no .env. */
 export function loadEnv(path = join(SERVICE_DIR, ".env")): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const line of readFileSync(path, "utf8").split("\n")) {
+  const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+  for (const [key, value] of Object.entries(process.env)) if (value) env[key] = value;
+  for (const line of text.split("\n")) {
     const index = line.indexOf("=");
     if (index > 0 && !line.trimStart().startsWith("#")) {
-      env[line.slice(0, index).trim()] = line.slice(index + 1).trim().replace(/^["']|["']$/g, "");
+      const key = line.slice(0, index).trim();
+      if (!process.env[key]) env[key] = line.slice(index + 1).trim().replace(/^["']|["']$/g, "");
     }
   }
   return env;
@@ -35,6 +40,22 @@ export function makeClients(account: LocalAccount, accessKey: string) {
     reader: createPublicClient({ chain, transport, cacheTime: 0 }),
     wallet: createWalletClient({ account, chain, transport, cacheTime: 0 }),
   };
+}
+
+/** A client with no signer, for the public reader. */
+export function makeReader(accessKey: string) {
+  if (!accessKey) throw new Error("ARKIV_ACCESS_KEY is not set");
+  return createPublicClient({
+    chain: rabdi({ accessKey }),
+    transport: http(undefined, { retryCount: 0, timeout: 15_000, fetchOptions: { cache: "no-store", redirect: "error" } }),
+    cacheTime: 0,
+  });
+}
+
+/** Real pushes rather than polling, because watchEntityEvents opens a socket only over a WebSocket transport. */
+export function makeWatcher(accessKey: string) {
+  if (!accessKey) throw new Error("ARKIV_ACCESS_KEY is not set");
+  return createPublicClient({ chain: rabdi({ accessKey }), transport: webSocket(undefined, { retryCount: 0 }), cacheTime: 0 });
 }
 
 export type Clients = ReturnType<typeof makeClients>;
@@ -74,9 +95,10 @@ export async function estimateWrite(account: LocalAccount, accessKey: string, pr
 }
 
 /** Explicit parameters for one operation, refusing if the cost is over budget or a transaction is pending. */
-export async function txParamsFor(reader: Clients["reader"], address: `0x${string}`, estimate: bigint, maxCostWei: bigint): Promise<TxParams> {
+export async function txParamsFor(reader: Clients["reader"], address: `0x${string}`, estimate: bigint, maxCostWei: bigint, operations = 1): Promise<TxParams> {
   const doubled = 2n * estimate;
-  const gas = doubled > SINGLE_OP_GAS_FLOOR ? doubled : SINGLE_OP_GAS_FLOOR;
+  const floor = SINGLE_OP_GAS_FLOOR + EXTRA_OP_GAS * BigInt(operations - 1);
+  const gas = doubled > floor ? doubled : floor;
   const block = await reader.getBlock({ blockTag: "latest" });
   if (gas > block.gasLimit / 2n) throw new Error("gas is over half the block limit");
   const nonce = await reader.getTransactionCount({ address, blockTag: "latest" });
@@ -86,10 +108,4 @@ export async function txParamsFor(reader: Clients["reader"], address: `0x${strin
   if (cost > maxCostWei) throw new Error(`gas cost ${cost} wei is over the ${maxCostWei} wei budget`);
   if (cost > (await reader.getBalance({ address }))) throw new Error("the wallet can't afford the gas");
   return { nonce, gas, gasPrice };
-}
-
-/** Records a write before it's signed, so a crash can't lead to a blind resend. */
-export function journal(entry: Record<string, unknown>, path = join(SERVICE_DIR, "data", "journal.jsonl")): void {
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, JSON.stringify({ at: new Date().toISOString(), ...entry }, (_, v) => (typeof v === "bigint" ? v.toString() : v)) + "\n");
 }

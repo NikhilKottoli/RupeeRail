@@ -1,0 +1,22 @@
+[Unit]
+Description=RupeeRail public track records, read from Arkiv
+After=network-online.target
+Wants=network-online.target
+# Stays stopped until the access key is in place. This service holds no signing key.
+ConditionFileNotEmpty=/etc/rupeerail/arkiv.env
+
+[Service]
+User=rupeerail
+Group=rupeerail
+WorkingDirectory=/opt/rupeerail/arkiv-board
+EnvironmentFile=/etc/rupeerail/arkiv.env
+ExecStart=/opt/rupeerail/node/bin/node --disable-warning=ExperimentalWarning --experimental-strip-types src/reader-server.ts
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -7,7 +7,12 @@
     "node": ">=22.10"
   },
   "scripts": {
-    "first-job": "node --experimental-strip-types src/first-job.ts"
+    "publisher": "node --experimental-strip-types src/publisher-server.ts",
+    "reader": "node --experimental-strip-types src/reader-server.ts",
+    "reconcile": "node --experimental-strip-types src/reconcile.ts",
+    "verify": "node --experimental-strip-types src/verify.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "check": "tsc"
   },
   "dependencies": {
     "@arkiv-network/sdk": "^1.0.1",
