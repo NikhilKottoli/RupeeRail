@@ -366,3 +366,26 @@ def test_quote_helpers_arent_shared_mutable():
     b = copy.deepcopy(a)
     a["intent"]["amount"] = "1"
     assert b["intent"]["amount"] == "10106"
+
+
+def _qr_image(text: str, background: int = 255, foreground: int = 0) -> bytes:
+    import cv2
+    import numpy as np
+    code = cv2.QRCodeEncoder.create().encode(text)
+    large = cv2.resize(code, None, fx=6, fy=6, interpolation=cv2.INTER_NEAREST)
+    shaded = np.where(large > 127, background, foreground).astype(np.uint8)
+    page = cv2.copyMakeBorder(shaded, 60, 60, 60, 60, cv2.BORDER_CONSTANT, value=255)
+    return cv2.imencode(".png", page)[1].tobytes()
+
+
+def test_a_qr_with_escaped_slashes_is_read_as_a_normal_link():
+    escaped = "upi:" + "\\\\/" * 2 + "pay?pa=teststore@okicici&pn=Test&am=121.65&cu=INR"
+    payment = find_payment("Scan QR to pay", _qr_image(escaped))
+    assert payment.qr_text.startswith("upi://pay?") and payment.upi_id == "teststore@okicici" and payment.amount_paise == 12165
+
+
+def test_only_the_scheme_is_repaired():
+    with pytest.raises(QrError):
+        find_payment("Scan QR to pay", _qr_image("upi:" + "\\\\/" * 2 + "evil?pa=teststore@okicici"))
+    with pytest.raises(QrError):
+        find_payment("Scan QR to pay", _qr_image("https:" + "\\\\/" * 2 + "example.com/pay"))

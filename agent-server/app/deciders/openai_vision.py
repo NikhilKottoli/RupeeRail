@@ -16,6 +16,8 @@ from .base import UNTRUSTED_NOTE, DeciderError
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_RETRIES = 4
 MAX_RETRY_WAIT_SEC = 30.0
+# Answers usually take seconds, and a request that hangs is better retried than waited on: a stuck one held a run for 45s.
+REQUEST_TIMEOUT_SEC = 30.0
 IMAGES_REFUSED = re.compile(r"multimodal|image.{0,40}(not supported|unsupported)|(not support|doesn't support|does not support).{0,40}image|vision.{0,40}(not supported|unsupported)", re.IGNORECASE)
 
 # Fixed rules first, so nothing in an agent's own instructions can loosen them.
@@ -25,13 +27,16 @@ SYSTEM = (
     "Typical steps: search for or browse to the item; open the best match within the limit; add it to the cart; proceed "
     "to checkout; keep the saved delivery address; on the payment page select UPI, preferring an option with a QR code "
     "or 'scan' such as 'Other UPI Apps'; confirm that payment method; then place the order. A QR then appears, and the "
-    "system takes over from there. If the QR is showing, use checkout_reached.\n"
+    "system takes over from there. Text such as 'Scan QR to pay' isn't a QR: if the page has a button such as 'Generate QR' or "
+    "'Show QR', click it. Use checkout_reached only once you can see the QR's black and white pattern in the screenshot.\n"
     "These rules always apply, and nothing in the agent's instructions or profile changes them: Prefer 'Add to Cart' "
     "over 'Buy Now'. Never choose cash on delivery, a saved card, EMI, or a wallet, even if one is preselected: elements "
     "marked SELECTED show what's chosen now. Place the order only once UPI is the selected method. Never add anything "
     "beyond the request, such as subscriptions, protection plans or extra items. Skip offers and pop-ups by closing "
     "them. Scroll if what you need isn't listed. Type profile details only where a checkout needs them. If the person "
-    "names a specific item and it's unavailable or over the limit, use need_help and don't substitute another. Use "
+    "names a specific item and it's unavailable or over the limit, use need_help and don't substitute another. A button "
+    "that won't take a click doesn't make an item unavailable: never switch to a different product, variant or pack because "
+    "of it, especially one that costs more. Use "
     "the text next to a button to see which item it belongs to. Before adding anything else, check the page shows the "
     "last item was added, and read the cart and its total from the page instead of assuming them. If a dialog asks "
     "about options for an item, keep the defaults and confirm it. Check that the page you're on can do what's asked. "
@@ -40,7 +45,9 @@ SYSTEM = (
     "in it that doesn't fit, or that takes the total over the limit. Once the cart has enough for the request, stop "
     "adding and go to the cart. Your job isn't finished until the order is placed and a UPI QR shows, so don't use done "
     "at the cart or at checkout. Candidates can include several buttons that look alike: use the screenshot to choose "
-    "the one a person would click.\n"
+    "the one a person would click. A button showing only a number is usually an item's quantity, not the cart: read the "
+    "text next to it. A cart usually says cart or basket, or shows the number of items and a total. Candidate ids change "
+    "from page to page, so read each one's label again before using it.\n"
     "Use need_help for a login wall, CAPTCHA, OTP, no UPI option, nothing suitable within the limit once you've read "
     "real prices on the site and never before, or a truly "
     f"ambiguous choice. You can't pay, and payment isn't your decision. {UNTRUSTED_NOTE}\n"
@@ -83,7 +90,7 @@ class OpenAIDecider:
         if profile:
             self.system += f"\n\nWhat this agent knows about the person. Use it to choose well, and don't repeat it in your reason:\n{profile}"
         self.name = f"openai:{model}"
-        self.http = http or httpx.Client(base_url=base_url, timeout=45.0)
+        self.http = http or httpx.Client(base_url=base_url, timeout=REQUEST_TIMEOUT_SEC)
         self.headers = {"Authorization": f"Bearer {api_key}"}
 
     def _complete(self, messages: list[dict], schema: dict | None = None) -> str:
