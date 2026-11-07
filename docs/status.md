@@ -13,7 +13,7 @@ Last updated 2026-11-06. Update this when something ships or a decision changes.
 
 ## In progress: long-lived agents
 
-Plan: `README-agents.md`. Prize targets: Arc (Advanced Stablecoin Logic) and Arkiv (Build on Arkiv, from scratch).
+Prize targets: Arc (Advanced Stablecoin Logic) and Arkiv (Build on Arkiv, from scratch).
 
 | Step | State |
 |---|---|

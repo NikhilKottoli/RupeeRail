@@ -1,4 +1,4 @@
-"""Client for the existing off-ramp backend. See docs/backend-notes.md."""
+"""Client for the existing off-ramp backend. See services/api-py/README.md."""
 
 from __future__ import annotations
 

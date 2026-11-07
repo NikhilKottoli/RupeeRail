@@ -16,3 +16,5 @@ __pycache__/
 *handoff*.md
 HANDOFF*.md
 apps/mock-store/
+
+.mcp.json

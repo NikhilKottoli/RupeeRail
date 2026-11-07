@@ -1,6 +1,6 @@
 # Verify log
 
-Answers to the plan's open questions (`README-agents.md`, section 11). Started 2026-11-06.
+Answers to the agent plan's open questions. Started 2026-11-06.
 
 | # | Question | Status | Answer |
 |---|---|---|---|
@@ -8,7 +8,7 @@ Answers to the plan's open questions (`README-agents.md`, section 11). Started 2
 | 2 | Circle `--chain` for Arc testnet? | **Yes, tested** | `ARC-TESTNET` works for typed-data signing. |
 | 2 | Are Circle signatures ECDSA-verifiable? | **No, tested** | It's a smart account. Signatures verify through ERC-1271 only. See below. |
 | 2b | Does the backend support Arc? | **Yes, tested** | Live payments reached `COMPLETED`: [lock](https://explorer.testnet.arc.io/tx/0x39ce2c0deddafc11408cfcb41e427a0606ee5998c139d0ebc11ad893372b3060), [browser-signed lock](https://explorer.testnet.arc.io/tx/0xd8f08ae50152e8676f35ad6704a01a7816015ddf13b3c459a6070bebd0fd5258). |
-| 4 | Backend "section 5" rules? | **Open** | The document isn't in this repo. See `backend-notes.md`. |
+| 4 | Backend "section 5" rules? | **Open** | The document isn't in this repo. |
 | 5 | Quote and permit expiry? | **Yes, from code** | Both are 90 seconds. |
 | 6 | Does `.click()` work on Swiggy? | **Deferred** | Only needed for the Swiggy stretch goal. |
 | 7 | Can a Circle spending policy be set from the CLI? | **Docs: not on testnet** | `circle wallet limit` is "Mainnet only". Limits must be enforced in `verify.py`. |
