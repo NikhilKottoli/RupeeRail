@@ -1,5 +1,7 @@
 import AccountBalanceWalletOutlined from "@mui/icons-material/AccountBalanceWalletOutlined";
 import AddCardOutlined from "@mui/icons-material/AddCardOutlined";
+import ArrowBack from "@mui/icons-material/ArrowBack";
+import GavelOutlined from "@mui/icons-material/GavelOutlined";
 import InstallMobileOutlined from "@mui/icons-material/InstallMobileOutlined";
 import QrCodeScanner from "@mui/icons-material/QrCodeScanner";
 import ReceiptLongOutlined from "@mui/icons-material/ReceiptLongOutlined";
@@ -23,6 +25,7 @@ import Stack from "@mui/material/Stack";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import { useCallback, useEffect, useRef, useState } from "react";
 import BuyScreen from "./components/BuyScreen";
+import ComplianceScreen from "./components/ComplianceScreen";
 import ConnectScreen from "./components/ConnectScreen";
 import HistoryScreen from "./components/HistoryScreen";
 import OnrampStatus from "./components/OnrampStatus";
@@ -36,6 +39,10 @@ import {
 } from "./lib/wallet";
 
 const WALLET_KEY = "rupeerail.wallet";
+// A page path, so it must stay out of API_PATHS in vite.config.ts and the Caddyfile.
+const COMPLIANCE_PATH = "/compliance";
+
+const onCompliancePath = () => window.location.pathname.replace(/\/+$/, "") === COMPLIANCE_PATH;
 
 type Tab = "pay" | "buy" | "history";
 const PAY_TAB = { value: "pay" as const, label: "Pay", icon: <QrCodeScanner /> };
@@ -60,6 +67,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>(() => (returned ? "buy" : "pay"));
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [compliance, setCompliance] = useState(onCompliancePath);
   const restored = useRef(false);
   // Material 3's "expanded" width: from here the bottom bar becomes a sidebar.
   const wide = useMediaQuery("(min-width:840px)", { noSsr: true });
@@ -68,9 +76,23 @@ export default function App() {
   // Buy is offered only when the server collects through Razorpay. The manual rail needs an operator and a real UPI ID.
   const tabs = config?.onramp?.rail === "razorpay" ? [PAY_TAB, BUY_TAB, HISTORY_TAB] : [PAY_TAB, HISTORY_TAB];
 
+  useEffect(() => {
+    const onPop = () => setCompliance(onCompliancePath());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const showCompliance = (show: boolean) => {
+    if (show === compliance) return;
+    window.history.pushState(null, "", show ? COMPLIANCE_PATH : "/");
+    setCompliance(show);
+    window.scrollTo(0, 0);
+  };
+
   const chooseTab = (value: Tab) => {
     setReturned(null);  // the Razorpay return is shown once; coming back to Buy starts fresh
     setTab(value);
+    showCompliance(false);
   };
 
   const loadConfig = useCallback(() => {
@@ -154,13 +176,30 @@ export default function App() {
 
   return (
     <Box sx={{ minHeight: "100dvh", display: "flex" }}>
-      {sidebar && <SideNav tabs={tabs} value={tab} onChange={chooseTab} />}
+      {sidebar && <SideNav tabs={tabs} value={compliance ? null : tab} onChange={chooseTab} />}
       <Box sx={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <AppBar position="sticky" elevation={0} color="transparent" sx={{ bgcolor: "background.default", pt: "env(safe-area-inset-top)" }}>
           <Toolbar sx={{ gap: 1 }}>
+            {compliance && (
+              <IconButton edge="start" onClick={() => showCompliance(false)} aria-label="Back"><ArrowBack /></IconButton>
+            )}
             {sidebar
               ? <Box sx={{ flexGrow: 1 }} />
               : <Typography variant="h6" component="h1" sx={{ flexGrow: 1 }}>RupeeRail</Typography>}
+            {!compliance && (
+              <Tooltip title="Compliance and FAQ">
+                <IconButton
+                  href={COMPLIANCE_PATH}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    showCompliance(true);
+                  }}
+                  aria-label="Compliance and FAQ"
+                >
+                  <GavelOutlined />
+                </IconButton>
+              </Tooltip>
+            )}
             {installPrompt && (
               <Tooltip title="Install app">
                 <IconButton onClick={install} aria-label="Install app"><InstallMobileOutlined /></IconButton>
@@ -194,7 +233,9 @@ export default function App() {
               We couldn't check that return from Razorpay. If you paid, we still confirm it with Razorpay directly, and your tokens are sent once it's confirmed.
             </Alert>
           )}
-          {configError ? (
+          {compliance ? (
+            <ComplianceScreen limits={config?.limits} />
+          ) : configError ? (
             <Alert severity="error" action={<Button color="inherit" size="small" onClick={loadConfig}>Retry</Button>}>
               {configError}
             </Alert>
@@ -228,7 +269,7 @@ export default function App() {
           elevation={0}
           sx={{ position: "fixed", bottom: 0, left: 0, right: 0, bgcolor: "background.surface", pb: "env(safe-area-inset-bottom)", zIndex: "appBar" }}
         >
-          <BottomNavigation showLabels value={tab} onChange={(_, value) => chooseTab(value)}>
+          <BottomNavigation showLabels value={compliance ? null : tab} onChange={(_, value) => chooseTab(value)}>
             {tabs.map(({ value, label, icon }) => <BottomNavigationAction key={value} label={label} value={value} icon={icon} />)}
           </BottomNavigation>
         </Paper>
