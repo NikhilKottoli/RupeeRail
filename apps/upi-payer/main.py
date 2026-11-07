@@ -2,6 +2,7 @@
 """RupeeRail UPI payer.
 
     main.py run                                 watch for locked offramps and pay them
+    main.py report                              tell a hosted agent server how payments ended
     main.py check                               backend, device, foreground app, readable screen
     main.py dump-screen                         print the text uiautomator can read right now
     main.py rehearse --upi-id a@ybl --inr 1     walk the flow, verify the screen, stop before Pay
@@ -20,6 +21,7 @@ from pathlib import Path
 
 import agent
 import payer
+import reporter
 
 UNKNOWN_ID = "0x" + "00" * 32
 
@@ -62,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="command", required=True)
     sub.add_parser("run")
+    sub.add_parser("report")
     sub.add_parser("check")
     sub.add_parser("dump-screen")
     rehearse = sub.add_parser("rehearse")
@@ -83,6 +86,9 @@ def main(argv: list[str] | None = None) -> int:
             limits = f"Rs {payer.format_paise(cfg.max_paise)} per payment, Rs {payer.format_paise(cfg.daily_cap_paise)} per 24 h"
             payer.log(f"{'LIVE: real money' if cfg.live else 'dry run'}; {limits}; watching {backend.base_url}")
             agent.Agent(backend, settings, cfg).run()
+            return 0
+        if args.command == "report":
+            reporter.from_env(cfg.db_path).run()
             return 0
         if args.command == "check":
             backend_ok = check_backend(make_backend())

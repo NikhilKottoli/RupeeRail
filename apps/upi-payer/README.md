@@ -46,6 +46,17 @@ uv run python main.py run                      # dry run: logs what it would pay
 UPI_LITE_LIVE=1 uv run python main.py run      # real money
 ```
 
+
+## Reporting results to a hosted agent server
+
+An agent server on another machine can't read this ledger, so run this beside the payer, with `AGENT_RESULTS_URL` and `AGENT_RESULTS_TOKEN` set:
+
+```bash
+uv run python main.py report
+```
+
+It only reads the ledger, and sends each payment's offramp id and final status, never the payee, amount or UTR.
+
 ## Limits
 
 | Limit | Default | Change with |
