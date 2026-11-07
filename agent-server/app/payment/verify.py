@@ -1,6 +1,6 @@
 """Code-enforced checks between the quote and the signature. No model is involved, so none can talk its way past them.
 
-Covers section 7 of README-agents.md. The backend's "section 5" rules aren't in this repo, so the signed-payload
+The backend's "section 5" rules aren't in this repo, so the signed-payload
 checks below come from reading the contract and the backend, and need comparing with that document when it arrives.
 """
 
