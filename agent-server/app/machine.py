@@ -65,6 +65,9 @@ DIALOG_GIVE_UPS = 2
 REAL_BLOCKER = re.compile(r"log.?in|sign.?in|otp|captcha|one.time|password|verif|no upi|upi (isn't|is not|option)|isn't responding", re.IGNORECASE)
 UNTOLD_ADDS = 3  # "Add" buttons with no text around them can't be told apart, so they share this allowance
 DEAD_ADDS_BEFORE_HELP = 3
+DEAD_CLICKS_BEFORE_HELP = 5
+STOP_CHECK_SEC = 0.25
+SLOW_MODEL_SEC = 15.0
 # A count of items on a cart button, such as "0 items in cart". Long pages can cut this out of the page text.
 CART_COUNT = re.compile(r"\b\d+\s*(?:items?\b|cart\b)|\bcart\s*\(?\s*\d+", re.IGNORECASE)
 # Different items, unless the prompt asks for more. A real model otherwise kept adding snacks and never opened the cart.
@@ -123,6 +126,10 @@ class Machine:
         self.add_rechecked = False
         self.dead_adds = 0
         self.last_total: int | None = None
+        self.clicked: tuple[str, tuple] | None = None  # the last click, and the page it was made on
+        self.click_rechecked = False
+        self.dead_clicks: set[str] = set()  # clicks that changed nothing on this page
+        self.dead_page: tuple | None = None
 
     async def run(self) -> dict:
         state = "preflight"
@@ -208,6 +215,9 @@ class Machine:
             next_state = await self._check_add_worked()
             if next_state:
                 return next_state
+        next_state = await self._check_click_worked()
+        if next_state:
+            return next_state
         if not await asyncio.to_thread(self._checkout_reached):
             return "decide"
         return self._rehearsal_report("the UPI QR", True) if self.agent_run.rehearse else "pay"
@@ -270,6 +280,65 @@ class Machine:
             return "pause"
         return None
 
+    @staticmethod
+    def _page_key(obs: PageObservation) -> tuple:
+        return (obs.url, obs.page_text, tuple((c.text, c.ariaLabel, c.value, c.checked) for c in obs.candidates))
+
+    async def _check_click_worked(self) -> str | None:
+        """Tells the model when a click did nothing. Otherwise it reads the same page, reaches the same answer and repeats it."""
+        page = self._page_key(self.observation)
+        if page != self.dead_page:
+            self.dead_clicks.clear()
+        clicked = self.clicked
+        if clicked and clicked[1] == page and not self.click_rechecked:  # a slow site may still answer, and a look costs no tokens
+            self.click_rechecked = True
+            await asyncio.sleep(self.wait_sec)
+            return "observe"
+        self.clicked, self.click_rechecked = None, False
+        if not clicked or clicked[1] != page:
+            return None
+        self.dead_clicks.add(clicked[0])
+        self.dead_page = page
+        self.history.append(f'clicked "{clicked[0][:80]}", but nothing on the page changed, so that isn\'t the control you need. Don\'t click it again: '
+                            "read the other candidates and the screenshot, and choose a different one")
+        self.agent_run.emit("act", "that click didn't change anything on the page")
+        if len(self.dead_clicks) >= DEAD_CLICKS_BEFORE_HELP:
+            self.help_reason = "none of the controls it tried changed anything on this page"
+            return "pause"
+        return None
+
+    @staticmethod
+    def _click_key(action: Action, candidates: list[Candidate]) -> str | None:
+        if action.type != "click":
+            return None
+        target = next((c for c in candidates if c.id == action.target), None)
+        return f"{target.text or target.ariaLabel or target.placeholder} {target.context}".strip() if target else None
+
+    async def _ask_model(self, screenshot: bytes | None) -> Action | None:
+        """A slow model can take minutes, so Stop must not wait for it, and the person should know why nothing is moving.
+        Returns None if the run was stopped. The request can't be cancelled, so its late answer is dropped."""
+        state, candidates = self._state_text(), self.observation.candidates
+
+        def ask() -> Action:
+            action = self.decider.choose_action(state, candidates, screenshot)
+            if action.type == "type" and not action.text:
+                action.text = self.decider.write_text("Write what to type next to reach the goal.", state)
+            return action
+
+        task = asyncio.create_task(asyncio.to_thread(ask))
+        loop = asyncio.get_running_loop()
+        started, told = loop.time(), False
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=STOP_CHECK_SEC)
+            if done:
+                return task.result()
+            if self.agent_run.stopped.is_set():
+                task.add_done_callback(lambda t: t.cancelled() or t.exception())
+                return None
+            if not told and loop.time() - started >= SLOW_MODEL_SEC:
+                told = True
+                self.agent_run.emit("decide", "the model is slow to answer, so the agent is still waiting")
+
     def _checkout_reached(self) -> bool:
         obs = self.observation
         if not obs or not obs.screenshot_b64 or not MAYBE_PAYMENT.search(obs.page_text):
@@ -300,9 +369,7 @@ class Machine:
         wants_vision = getattr(self.decider, "uses_vision", False) or self.repeats >= REPEATS_BEFORE_SCREENSHOT or not obs.candidates
         screenshot = base64.b64decode(obs.screenshot_b64) if obs.screenshot_b64 and wants_vision else None
         try:
-            action = await asyncio.to_thread(self.decider.choose_action, self._state_text(), obs.candidates, screenshot)
-            if action.type == "type" and not action.text:
-                action.text = await asyncio.to_thread(self.decider.write_text, "Write what to type next to reach the goal.", self._state_text())
+            action = await self._ask_model(screenshot)
         except DeciderError as e:
             self.decider_errors += 1
             self.agent_run.emit("decide", str(e))
@@ -310,6 +377,8 @@ class Machine:
                 self.help_reason = f"the model isn't responding: {e}"
                 return "pause"
             await asyncio.sleep(self.wait_sec)
+            return "observe"
+        if action is None:
             return "observe"
         self.decider_errors = 0
         self.steps += 1
@@ -320,6 +389,11 @@ class Machine:
         if problem:
             self.history.append(f"rejected: {problem}")
             self.agent_run.emit("decide", f"rejected the action: {problem}")
+            return "observe"
+        click_key = self._click_key(action, obs.candidates)
+        if click_key in self.dead_clicks:
+            self.history.append(f'blocked clicking "{click_key[:80]}" again: it already did nothing on this page. Choose a different control')
+            self.agent_run.emit("decide", "blocked a click that already did nothing on this page")
             return "observe"
         if action.type == "need_help":
             allowed = GIVE_UPS_SENT_BACK + (DIALOG_GIVE_UPS if obs.dialog_open else 0)
@@ -395,6 +469,9 @@ class Machine:
             if self.claimed_checkout >= 4:
                 self.help_reason = "the agent thinks this is the checkout, but no UPI QR and total could be read"
                 return "pause"
+            self.history.append("said the QR was showing, but no readable UPI QR is on the page yet, so the system can't take over. If a button "
+                                "shows or generates the QR, click it now. Otherwise finish selecting UPI")
+            self.agent_run.emit("decide", "no readable UPI QR on the page yet")
             await asyncio.sleep(self.wait_sec)
             return "observe"
         return "act"
@@ -460,11 +537,14 @@ class Machine:
             # So a log can show whether a wrong turn was the model's choice or a click landing somewhere else.
             detail = target.describe()
             self.agent_run.emit("act", f"clicking {action.target}: {detail}")
+            if not self.pending_add:  # an add has its own check
+                self.clicked = (self._click_key(action, self.observation.candidates) or "", self._page_key(self.observation))
         if action.type == "wait":
             await asyncio.sleep(self.wait_sec)
             return "observe"
         reply = await self.exchange({"type": "action", "action": action.model_dump(exclude={"model", "reason"})})
         if not reply.get("ok"):
+            self.clicked = None  # it never happened, and the failure is reported below
             if self.pending_add:  # the click never happened, so it isn't an add, or one the site ignored
                 self.add_clicks[self.pending_add] -= 1
                 self.pending_add = None
@@ -488,6 +568,7 @@ class Machine:
         self.blocked_commits = 0
         self.blocked_adds = 0
         self.dead_adds = 0
+        self.dead_clicks.clear()
         self.repeats = 0
         self.last_signature = ""
         self.claimed_checkout = 0

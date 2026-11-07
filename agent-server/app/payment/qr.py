@@ -9,6 +9,7 @@ from urllib.parse import unquote_plus
 import cv2
 import numpy as np
 
+ESCAPED_SCHEME = re.compile(r"^upi:\\+/\\+/", re.IGNORECASE)
 UPI_LINK_RE = re.compile(r"upi://pay\?[^\s\"'<>]+", re.IGNORECASE)
 VPA_RE = re.compile(r"^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9]{2,64}$")
 AMOUNT_RE = re.compile(r"^(\d+)(?:\.(\d{1,2}))?$")
@@ -62,6 +63,11 @@ def parse_upi(text: str) -> UpiPayment:
     return UpiPayment(raw, upi_id, params.get("pn") or None, amount)
 
 
+def _unescape_scheme(text: str) -> str:
+    """Some sites generate a QR from JSON text, so it reads upi:\\/\\/pay?... Only the prefix is repaired, so the backend gets a normal link."""
+    return ESCAPED_SCHEME.sub("upi://", text.strip())
+
+
 def _decode_all(image: np.ndarray) -> set[str]:
     detector = cv2.QRCodeDetector()
     found: set[str] = set()
@@ -93,11 +99,12 @@ def decode_screenshot(image_bytes: bytes) -> set[str]:
     attempts = (
         image,
         grey,
+        cv2.resize(grey, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC),
         cv2.resize(grey, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC),
         cv2.threshold(grey, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1],
     )
     for attempt in attempts:
-        found = _decode_all(attempt)
+        found = {_unescape_scheme(text) for text in _decode_all(attempt)}
         if found:
             return found
     return set()

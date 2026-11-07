@@ -46,6 +46,10 @@ Plan: `README-agents.md`. Prize targets: Arc (Advanced Stablecoin Logic) and Ark
 - **Reporting payout results to the backend.** Until then, `COMPLETED` can appear when nobody was paid. The agent avoids this by reading the payer's result directly, but the backend and PWA don't yet.
 - **The rest of the Arkiv board**, until the agent works.
 
+## First real agent payment (2026-11-07)
+
+An agent ordered and paid on a real site from its own wallet, and the phone reported the merchant was paid. It paid for a dearer variant, because a hover effect left the wanted item's button covered. The pointer now moves when that happens, but the run limit is the only hard protection against a costly substitute, so keep it tight.
+
 ## Razorpay and swap readiness (checked 2026-11-07)
 
 - **`APP_ENV=prod` can't start yet, on purpose.** `razorpayx` isn't implemented, and `phone` and `stub` are dev rails. The workable setup is `APP_ENV=dev` with `COLLECT_RAIL=razorpay`.
@@ -59,6 +63,7 @@ Plan: `README-agents.md`. Prize targets: Arc (Advanced Stablecoin Logic) and Ark
 
 - [ ] Enough UPI Lite balance on the phone before any real order. The agent can't see that balance before it locks funds.
 - [ ] One ₹1 test purchase on the live site, then top up the vault pools.
+- [ ] Decide whether a real run may pay when the QR is slightly below the page's earlier total. Today the amount check refuses it, before any funds lock.
 - [ ] Your own details in Chef's profile. It currently holds a test diet.
 - [ ] A new model API key after the event. The current one has been exposed in a chat.
 - [ ] The backend's "section 5" rules, probably in `HANDOFF-payment-cycle-api-metamask.md`, which isn't in the repo.

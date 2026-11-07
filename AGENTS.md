@@ -19,7 +19,7 @@ Python projects use `uv` and Python 3.12. There's no CI and no configured Python
 | `services/api-py` | `uv run uvicorn app.main:app --port 8788` | `uv run pytest -m "not live"` | `uv run pytest tests/test_workers.py::test_failure_refunds_reason_3` |
 | `apps/upi-payer` | `uv run python main.py run` | `uv run pytest` | `uv run pytest tests/test_agent.py::test_dry_run_uses_no_phone` |
 | `agent-server` | `uv run uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8790` | `uv run pytest` | `uv run pytest tests/test_agent.py::test_goal_to_paid_on_the_store` |
-| `extension` | `npm run build`, then load `dist` unpacked in Chrome | `npx playwright test` | `npx playwright test -g "typing a prompt"` |
+| `extension` | `npm run build`, then load `dist` unpacked in Chrome | `npx playwright test`, and `npx playwright test -c playwright.content.config.ts` for page reading alone, which needs no agent server | `npx playwright test -g "typing a prompt"` |
 | `apps/web` | `npm run dev` | `npm test`, `npx playwright test` | `npx vitest run -t "splitSignature"`, `npx playwright test -g "dark mode"` |
 | `apps/mock-store` (local only, not in git) | `python3 -m http.server 5180 --bind 127.0.0.1 --directory apps/mock-store` | Through `extension`, whose browser tests skip without it | |
 | `contracts` | | `forge test` | `forge test --match-test test_Complete_OnlySettler` |
@@ -54,7 +54,7 @@ There's no shared package between these projects, so a change on one side needs 
 - **`viewToken`:** `derive_view_token` in `services/api-py/app/quote_service.py` and `apps/upi-payer/agent.py` must match. Both test files hold the same test vector, and `VIEW_TOKEN_SECRET` must be the same on the server and the payer.
 - **API paths on the shared hostname:** a new top-level route goes in `apps/web/deploy/Caddyfile` and `API_PATHS` in `apps/web/vite.config.ts`. The web app can't use those paths for its own pages.
 - **Hosts the browser calls directly:** `connect-src` in `apps/web/deploy/Caddyfile` must list them, or the feature works everywhere except production. If the backend's `ARC_RPC_URL` changes the Arc RPC in `/config`, change it there too.
-- **UPI QR parsing:** `services/api-py/app/qr.py` has the final say, and `apps/web/src/lib/upi.ts` and `agent-server/app/payment/qr.py` mirror it.
+- **UPI QR parsing:** `services/api-py/app/qr.py` has the final say, and `apps/web/src/lib/upi.ts` and `agent-server/app/payment/qr.py` mirror it. The agent also repairs a QR whose link reads `upi:\\/\\/pay?`, so the backend receives a normal link. The web app doesn't do this yet, and would refuse such a QR.
 
 ## Design decisions that aren't obvious
 

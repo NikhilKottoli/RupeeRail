@@ -15,6 +15,8 @@ const SCROLL_SETTLE_MS = 150;
 const NEW_TAB_WAIT_MS = 20_000;
 const STAGE_LIMIT_MS = 12_000;
 const CAPTURE_LIMIT_MS = 4_000;
+const CONTENT_SETTLE_LIMIT_MS = 4_000;
+const HOVER_SETTLE_MS = 400;
 const DEBUGGER_VERSION = "1.3";
 
 interface AgentLook {
@@ -141,9 +143,17 @@ async function screenshot(current: Run): Promise<string> {
   }
 }
 
+/** Waits in every frame, because a payment form often loads inside one while the page around it stays still. */
+async function contentSettled(tabId: number): Promise<void> {
+  const target = { tabId, allFrames: true };
+  await chrome.scripting.executeScript({ target, files: ["content.js"] });
+  await chrome.scripting.executeScript({ target, func: () => window.__rupeerail?.settled() });
+}
+
 async function observe(current: Run) {
   const tab = await guardedTab(current);
   await settle(current.tabId);
+  await within(contentSettled(current.tabId), "waiting for the page to load", CONTENT_SETTLE_LIMIT_MS).catch(() => undefined); // it's only a courtesy
   const snapshot = await within(readFrames(current), "reading the page");
   await new Promise((resolve) => setTimeout(resolve, 150)); // let a QR that was just scrolled to paint
   if (!tab.active) await chrome.tabs.update(current.tabId, { active: true });
@@ -183,7 +193,14 @@ async function realClick(current: Run, x: number, y: number): Promise<void> {
 async function clickWithRealInput(current: Run, action: any) {
   if (/^f\d+:/.test(action.target ?? "")) return null; // coordinates inside a frame aren't the page's
   const locate = { type: "locate_click", target: action.target };
-  const first = await performInFrame(current, locate); // scrolls it into view
+  let first = await performInFrame(current, locate); // scrolls it into view
+  if (first?.covered && (await attachDebugger(current))) {
+    // The last click leaves the pointer where it was, so a hover effect on the next page, such as a product photo's zoom,
+    // can sit over the button. Nothing the agent chooses would close it, but moving the pointer does, as it would for a person.
+    await chrome.debugger.sendCommand({ tabId: current.tabId }, "Input.dispatchMouseEvent", { type: "mouseMoved", x: first.x, y: first.y });
+    await new Promise((resolve) => setTimeout(resolve, HOVER_SETTLE_MS));
+    first = await performInFrame(current, locate);
+  }
   if (!first?.ok) return first;
   if (first.x === undefined) return null; // a radio or checkbox, whose real input may be hidden
   await new Promise((resolve) => setTimeout(resolve, SCROLL_SETTLE_MS));

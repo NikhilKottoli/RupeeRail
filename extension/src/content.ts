@@ -19,6 +19,16 @@ const AGENT_ATTR = "data-agent-id";
 const MAYBE_PAYMENT = /upi|scan|qr\b/i;
 // Likely steps of a purchase. These stay in the list however far they are from the middle of the screen.
 const IMPORTANT = /upi|scan|qr\b|pay|proceed|checkout|check out|buy|\badd\b|\bcart\b|\border\b|continue|use this|deliver|search|sign in/i;
+// The way to the next step of a purchase. A list of products is full of "Add" buttons, and these often sit far from the
+// middle of the screen, such as a cart in the top bar, so they're always kept.
+const CHECKOUT = /\bcart\b|\bbasket\b|\bbag\b|checkout|check out|proceed|\bupi\b|\bscan\b|\d+\s*items?\b/i;
+const MAX_CHECKOUT = 12;
+const MAX_STYLED_SCAN = 4000;
+const MAX_STYLED_TEXT = 80;
+const QUIET_MS = 1000; // a response often takes a second or two, and nothing on the page moves until it arrives
+const SETTLE_CAP_MS = 3000;
+const SETTLE_POLL_MS = 100;
+const LOADING = '[aria-busy="true"],[class*="skeleton" i],[class*="shimmer" i],[class*="spinner" i],[class*="loader" i]';
 // Lines worth keeping when a long page has to be cut short.
 const KEY_LINE = /total|amount|payable|pay|upi|₹|deliver|sign in|captcha|one.time|otp|cart|basket|\bitems?\b|added/i;
 
@@ -60,6 +70,27 @@ function isGhost(element: Element, r: DOMRect): boolean {
   if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) return false;
   const under = document.elementFromPoint(x, y);
   return !!under && under !== element && !element.contains(under) && under.contains(element);
+}
+
+/**
+ * Many sites build controls such as a cart from a plain div with a click handler, which no selector can find. The pointer
+ * cursor gives them away. This keeps only the outermost one, and skips anything holding a real control, such as a product card.
+ */
+function clickableByStyle(): HTMLElement[] {
+  const found: HTMLElement[] = [];
+  const blocks = document.body?.querySelectorAll<HTMLElement>("div,span,li,section,header,footer,nav,aside") ?? [];
+  let scanned = 0;
+  for (const element of blocks) {
+    if (++scanned > MAX_STYLED_SCAN) break;
+    const text = (element.textContent ?? "").trim();
+    if ((!text && !element.getAttribute("aria-label")) || text.length > MAX_STYLED_TEXT) continue;
+    if (element.closest(SELECTOR) || element.querySelector(SELECTOR)) continue;
+    if (getComputedStyle(element).cursor !== "pointer") continue;
+    const parent = element.parentElement;
+    if (parent && getComputedStyle(parent).cursor === "pointer") continue;
+    found.push(element);
+  }
+  return found;
 }
 
 function roleOf(element: Element): string {
@@ -112,7 +143,8 @@ function contextOf(element: Element, label: string): string {
 /** Only where it's needed, since it adds to what's sent to the model on every step. */
 function needsContext(element: Element, label: string, all: Element[]): boolean {
   if (element instanceof HTMLInputElement && !isChoice(element)) return false;
-  return /\badd\b/i.test(label) || all.some((other) => other !== element && labelOf(other) === label);
+  // A bare "1" or "+" says nothing by itself: it could be a quantity in a product card, or the cart.
+  return label.length <= 2 || /\badd\b/i.test(label) || all.some((other) => other !== element && labelOf(other) === label);
 }
 
 /** Brings a likely QR into view, so the screenshot contains it. */
@@ -145,13 +177,42 @@ function isCovered(element: Element, r: DOMRect): boolean {
   return !!under && !shown.contains(under) && !under.contains(shown);
 }
 
+/**
+ * Resolves once the page has stopped changing, so the agent doesn't pay a model to read a half-loaded one. Quiet means no
+ * new content, no finished requests and no visible loading placeholder. A page that never stops, such as a carousel, gets the cap.
+ */
+function settled(quietMs = QUIET_MS, capMs = SETTLE_CAP_MS): Promise<void> {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    let last = started;
+    let requests = performance.getEntriesByType("resource").length;
+    const observer = new MutationObserver(() => { last = performance.now(); });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    const timer = setInterval(() => {
+      const now = performance.now();
+      const seen = performance.getEntriesByType("resource").length;
+      if (seen !== requests) {
+        requests = seen;
+        last = now;
+      }
+      const loading = [...document.querySelectorAll(LOADING)].some((e) => e.getBoundingClientRect().width > 0);
+      if (now - started >= capMs || (now - last >= quietMs && !loading)) {
+        clearInterval(timer);
+        observer.disconnect();
+        resolve();
+      }
+    }, SETTLE_POLL_MS);
+  });
+}
+
 function snapshot() {
   const pageText = readText();
   showLikelyQr(pageText);
   document.querySelectorAll(`[${AGENT_ATTR}]`).forEach((e) => e.removeAttribute(AGENT_ATTR));
   const middle = window.innerHeight / 2;
   const distance = (r: DOMRect) => Math.abs(r.top + r.height / 2 - middle);
-  let all = [...document.querySelectorAll(SELECTOR)]
+  const styled = new Set<Element>(clickableByStyle());
+  let all = [...document.querySelectorAll(SELECTOR), ...styled]
     .filter((e) => isVisible(e) && !isSensitive(e) && !(e as HTMLButtonElement).disabled)
     // A label for a choice would just repeat the choice.
     .filter((e) => !(e instanceof HTMLLabelElement && e.control && isChoice(e.control)))
@@ -164,8 +225,9 @@ function snapshot() {
   const coveredCount = onScreen.length - usable.length;
   if (usable.length && coveredCount >= MIN_COVERED_FOR_DIALOG && coveredCount / onScreen.length >= DIALOG_COVERED_SHARE) all = usable;
   const dialogOpen = all === usable;
+  const checkout = all.filter((c) => CHECKOUT.test(c.label) && !/\badd\b/i.test(c.label)).slice(0, MAX_CHECKOUT);
   const priority = all.filter((c) => IMPORTANT.test(c.label) || isChoice(c.e)).slice(0, MAX_PRIORITY);
-  const chosen = new Set(priority);
+  const chosen = new Set([...checkout, ...priority]);
   for (const c of all) {
     if (chosen.size >= MAX_CANDIDATES) break;
     chosen.add(c);
@@ -177,7 +239,7 @@ function snapshot() {
     const field = e as HTMLInputElement;
     return {
       id,
-      role: roleOf(e),
+      role: styled.has(e) ? "clickable" : roleOf(e),
       text: labelOf(e),
       context: needsContext(e, labelOf(e), elements) ? contextOf(e, labelOf(e)) : "",
       ariaLabel: e.getAttribute("aria-label") ?? "",
@@ -199,7 +261,7 @@ function findTarget(id: string | null | undefined): HTMLElement {
 }
 
 /** Where a real click on this element would land, in the page's viewport. Choices are clicked directly instead. */
-function locateClick(element: HTMLElement): { ok: boolean; x?: number; y?: number; error?: string; landed_on?: string } {
+function locateClick(element: HTMLElement): { ok: boolean; x?: number; y?: number; covered?: boolean; error?: string; landed_on?: string } {
   element.closest("a")?.removeAttribute("target");
   element.closest("form")?.removeAttribute("target");
   element.scrollIntoView({ block: "center", behavior: "instant" });
@@ -209,7 +271,7 @@ function locateClick(element: HTMLElement): { ok: boolean; x?: number; y?: numbe
   const y = r.y + r.height / 2;
   const under = document.elementFromPoint(x, y);
   // A real click goes to whatever is on top, so a pop-up has to be closed first.
-  if (under && !element.contains(under)) return { ok: false, error: "something is covering that element, such as a pop-up, or it's hidden. Close the pop-up, or choose another element" };
+  if (under && !element.contains(under)) return { ok: false, covered: true, x, y, error: "something is covering that element, such as a pop-up, or it's hidden. Close the pop-up, or choose another element" };
   const hit = under ?? element;
   const link = hit.closest("a")?.getAttribute("href") ?? "";
   return { ok: true, x, y, landed_on: `${labelOf(hit).slice(0, 60)}${link ? ` -> ${link.slice(0, 60)}` : ""}` };
@@ -260,7 +322,7 @@ function pressKey(key: string): void {
   if (key === "Enter") (target as HTMLInputElement).form?.requestSubmit?.();
 }
 
-function perform(action: PageAction): { ok: boolean; error?: string; x?: number; y?: number; landed_on?: string } {
+function perform(action: PageAction): { ok: boolean; error?: string; x?: number; y?: number; covered?: boolean; landed_on?: string } {
   try {
     switch (action.type) {
       case "locate_click":
@@ -288,10 +350,10 @@ function perform(action: PageAction): { ok: boolean; error?: string; x?: number;
 
 declare global {
   interface Window {
-    __rupeerail?: { snapshot: typeof snapshot; perform: typeof perform };
+    __rupeerail?: { snapshot: typeof snapshot; perform: typeof perform; settled: typeof settled };
   }
 }
 
-window.__rupeerail = { snapshot, perform };
+window.__rupeerail = { snapshot, perform, settled };
 
 export {};

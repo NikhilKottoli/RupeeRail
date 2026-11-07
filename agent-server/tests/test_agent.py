@@ -353,6 +353,98 @@ def test_repeating_gets_a_screenshot_then_asks_for_help():
     assert result["status"] == "STOPPED"
 
 
+def test_a_click_that_changes_nothing_is_reported_and_not_repeated():
+    stepper = {"id": "a1", "role": "button", "text": "1", "context": "Diet Coke 330 ml"}
+    cart = {"id": "a2", "role": "clickable", "text": "1 item Rs 50"}
+    same = page("Menu", [stepper, cart])
+    decider = ScriptedDecider(Action(type="click", target="a1"), Action(type="click", target="a1"), Action(type="click", target="a2"), Action(type="done"))
+
+    def open_cart(message):
+        if message["action"]["target"] == "a2":
+            extension.pages = [page("Your cart", [PROCEED], url=URL + "cart")]
+
+    extension = Extension(same, on_act=open_cart)
+    _, _, session, machine, _ = run_machine(decider, extension)
+    assert [a["target"] for a in extension.actions] == ["a1", "a2"]  # the second click on the stepper never reached the page
+    told = decider.calls[1][0]
+    assert "nothing on the page changed" in told and "Diet Coke" in told
+    assert "blocked clicking" in decider.calls[2][0]
+    assert any("didn't change anything" in e["message"] for e in session.events)
+    assert machine.dead_clicks == set()  # a new page starts fresh
+
+
+def test_a_slow_site_gets_another_look_before_the_model_is_asked_again():
+    """Only a look costs nothing. The second page arrives on the recheck, so the model is asked once per real change."""
+    button = {"id": "a1", "role": "button", "text": "Next"}
+    before, after = page("One", [button]), page("Two", [button])
+    decider = ScriptedDecider(Action(type="click", target="a1"), Action(type="done"))
+    extension = Extension(before, before, after)
+    _, _, session, _, _ = run_machine(decider, extension)
+    assert extension.observes >= 3 and not any("didn't change anything" in e["message"] for e in session.events)
+    assert len(decider.calls) == 2
+
+
+def test_claiming_the_qr_is_showing_tells_the_model_to_generate_it():
+    generate = {"id": "a1", "role": "button", "text": "Generate QR"}
+    decider = ScriptedDecider(Action(type="checkout_reached"), Action(type="click", target="a1"), Action(type="done"))
+    extension = Extension(page("Scan QR to pay", [generate]))
+    _, _, session, _, _ = run_machine(decider, extension)
+    assert "no readable UPI QR is on the page yet" in decider.calls[1][0]
+    assert extension.actions[0]["target"] == "a1"
+
+
+def test_a_click_is_allowed_again_once_the_page_changes():
+    button = {"id": "a1", "role": "button", "text": "Next"}
+    first, second = page("One", [button]), page("Two", [button])
+    decider = ScriptedDecider(Action(type="click", target="a1"), Action(type="click", target="a1"), Action(type="done"))
+    extension = Extension(first, second, second)
+    run_machine(decider, extension)
+    assert len(extension.actions) == 2
+
+
+def test_selecting_a_radio_counts_as_a_change():
+    radio = {"id": "a1", "role": "radio", "text": "UPI"}
+    decider = ScriptedDecider(Action(type="click", target="a1"), Action(type="done"))
+    extension = Extension(page("Pay", [radio]), page("Pay", [{**radio, "checked": True}]))
+    _, _, session, _, _ = run_machine(decider, extension)
+    assert not any("didn't change anything" in e["message"] for e in session.events)
+
+
+def test_many_dead_clicks_ask_for_help():
+    buttons = [{"id": f"a{i}", "role": "button", "text": f"B{i}"} for i in range(1, 8)]
+    decider = ScriptedDecider(*[Action(type="click", target=f"a{i}") for i in range(1, 8)])
+    result, session = run_until_help(decider, Extension(page("Same", buttons)))
+    assert any(e["stage"] == "need_help" and "none of the controls" in e["message"] for e in session.events)
+
+
+class SlowDecider(ScriptedDecider):
+    def __init__(self, *actions, delay=1.0):
+        super().__init__(*actions)
+        self.delay = delay
+
+    def choose_action(self, state, candidates, screenshot):
+        import time
+        time.sleep(self.delay)
+        return super().choose_action(state, candidates, screenshot)
+
+
+def test_stop_doesnt_wait_for_a_slow_model():
+    import threading
+    import time
+    session = AgentRun("g", 100, ["127.0.0.1"])
+    threading.Timer(0.1, session.stop).start()
+    started = time.time()
+    result, *_ = run_machine(SlowDecider(Action(type="done"), delay=2.0), Extension(page("x")), session=session)
+    # Timed from the run's own result: closing this test's event loop then waits for the abandoned request.
+    assert result["status"] == "STOPPED" and session.events[-1]["at"] - started < 1.5
+
+
+def test_a_slow_model_is_mentioned(monkeypatch):
+    monkeypatch.setattr("app.machine.SLOW_MODEL_SEC", 0.1)
+    _, _, session, _, _ = run_machine(SlowDecider(Action(type="done"), delay=0.5), Extension(page("x")))
+    assert any("slow to answer" in e["message"] for e in session.events)
+
+
 def test_model_asking_for_help_pauses():
     result, session = run_until_help(ScriptedDecider(Action(type="need_help", reason="OTP screen")), Extension(page("x")))
     assert any("OTP screen" in e["message"] for e in session.events) and result["status"] == "STOPPED"

@@ -23,7 +23,7 @@ import json
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from eth_account import Account
@@ -157,6 +157,13 @@ class LabelScript:
         return ""
 
 
+HOVER_STYLE = """<style>
+.left { position: fixed; left: 0; top: 0; width: 50vw; height: 100vh; display: block; background: #eee; }
+#add { position: fixed; left: 60vw; top: 40vh; width: 30vw; height: 80px; }
+#zoom { position: fixed; left: 50vw; top: 0; width: 50vw; height: 100vh; background: #ccc; z-index: 5; }
+</style>"""
+
+
 def serve(app, port: int) -> threading.Thread:
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
@@ -181,6 +188,16 @@ def main() -> None:
     async def slow_page():  # a start page that takes a while, so a new tab has no address yet
         await asyncio.sleep(3)
         return RedirectResponse("/")
+
+    @store.get("/hover/", response_class=HTMLResponse)
+    async def hover_start():
+        return f"<!doctype html><title>Shop</title>{HOVER_STYLE}<a id=photo class=left href='/hover/product'>Open product</a>"
+
+    @store.get("/hover/product", response_class=HTMLResponse)
+    async def hover_product():  # the pointer is still over this photo from the last click, so its zoom starts open, until the mouse leaves
+        return (f"<!doctype html><title>Product</title>{HOVER_STYLE}<div id=photo class=left>Photo</div><div id=zoom></div>"
+                "<button id=add onclick=\"this.textContent='Added'\">Add to cart</button>"
+                "<script>addEventListener('mousemove', (e) => { zoom.style.display = e.target.id === 'photo' ? 'block' : 'none'; });</script>")
 
     store.mount("/", StaticFiles(directory=ROOT / "apps" / "mock-store", html=True, check_dir=False))  # kept locally, not in git
     def decider(agent: dict, prompt: str):
