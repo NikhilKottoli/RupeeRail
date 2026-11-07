@@ -193,7 +193,7 @@ Circle's own spending policies are mainnet-only, so they aren't used.
 4. **Extension.** Done, and used from a person's own Chrome.
 5. **Food test site.** Done: `apps/mock-store/foodie/`, kept locally.
 6. **Real sites.** In progress. Amazon went from search to a real QR, a real lock and the phone, which stopped at a low UPI Lite balance. Swiggy reached its cart. See `docs/verify-log.md`.
-7. **Arkiv, parked until 6 works.** A public `rupeerail.agent` card with name, avatar id, category, wallet and paid count, extended while the agent is active. Payout receipts linked to the agent's wallet. The panel shows each agent's track record, read through a server-side proxy. Personal data stays off Arkiv.
+7. **Arkiv, built.** See `arkiv/schema.md`. The original plan: A public `rupeerail.agent` card with name, avatar id, category, wallet and paid count, extended while the agent is active. Payout receipts linked to the agent's wallet. The panel shows each agent's track record, read through a server-side proxy. Personal data stays off Arkiv.
 8. **Submission.** Architecture diagram, prize files, recorded run, secret scan, `upi.png` consent or replacement, AI-use statement, and confirming the Arc track.
 
 ---

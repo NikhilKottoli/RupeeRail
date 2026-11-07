@@ -23,7 +23,7 @@ Plan: `README-agents.md`. Prize targets: Arc (Advanced Stablecoin Logic) and Ark
 | 4: extension | Done, and used from a person's own Chrome |
 | 5: food test site | Done. The mock stores are kept locally, not in git |
 | 6: real sites | In progress. Amazon reached a real QR, a real lock and the phone. Swiggy reached its cart. Zomato not tried |
-| 7: Arkiv | First entity written, then parked until step 6 works |
+| 7: Arkiv | Publisher, read service, Agents page and panel built. One real agent published. See below |
 | 8: submission | Not started |
 
 **Live payments through the agent server:** no rupee payment has succeeded through an agent's wallet yet. A real Chef run stopped at a locked phone, and a real ₹256 Amazon run stopped when the phone's UPI Lite balance was too low. In both, the panel correctly said Not paid while the chain said `COMPLETED`, and those test USDC can be disputed. The earlier ₹1 through the first wallet and the phone was before the extension existed.
@@ -38,13 +38,19 @@ Plan: `README-agents.md`. Prize targets: Arc (Advanced Stablecoin Logic) and Ark
 - The demo site is chosen by rehearsing on real sites, with `apps/mock-store/foodie/` as the fallback. The phone receives the merchant's raw QR, but the backend still refuses BharatQR.
 - Order-placing clicks go ahead on their own only when UPI is visibly selected and the total is within the limit.
 - Each Circle wallet pays from a capped allowance, with no permit. See `docs/verify-log.md`.
-- Arkiv holds a payout board: jobs, claims, receipts and payers. See `arkiv/schema.md`.
+- Arkiv holds each published agent's public track record: a card, receipts and a working marker. See `arkiv/schema.md`. The earlier payout board plan was dropped, because it needed changes to the phone payer.
 - Browser wallets only for now, with WalletConnect as a possible later addition.
 
 ## Parked
 
 - **Reporting payout results to the backend.** Until then, `COMPLETED` can appear when nobody was paid. The agent avoids this by reading the payer's result directly, but the backend and PWA don't yet.
-- **The rest of the Arkiv board**, until the agent works.
+
+## Arkiv track records (2026-11-07)
+
+- **Live on Rabdi:** Butler's card and 2 real receipts, from the publisher running on the agent machine.
+- **Publishing is off for each agent** until a person turns it on in the panel.
+- **Deployed 2026-11-07:** the read service as `rupeerail-arkiv`, and the Agents page at `/agents`. The steps are in `apps/web/README.md`.
+- **The publisher runs by hand** beside the agent server, so it stops if that machine restarts. With it stopped, runs still work and their records wait in the queue.
 
 ## First real agent payment (2026-11-07)
 

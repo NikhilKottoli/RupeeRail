@@ -22,12 +22,14 @@ Python projects use `uv` and Python 3.12. There's no CI and no configured Python
 | `extension` | `npm run build`, then load `dist` unpacked in Chrome | `npx playwright test`, and `npx playwright test -c playwright.content.config.ts` for page reading alone, which needs no agent server | `npx playwright test -g "typing a prompt"` |
 | `apps/web` | `npm run dev` | `npm test`, `npx playwright test` | `npx vitest run -t "splitSignature"`, `npx playwright test -g "dark mode"` |
 | `apps/mock-store` (local only, not in git) | `python3 -m http.server 5180 --bind 127.0.0.1 --directory apps/mock-store` | Through `extension`, whose browser tests skip without it | |
+| `services/arkiv-board` | `npm run publisher`, and `npm run reader` for the public read service. Node 22.10 or later | `npm test` | `node --experimental-strip-types --test --test-name-pattern="uncertain" test/*.test.ts` |
 | `contracts` | | `forge test` | `forge test --match-test test_Complete_OnlySettler` |
 
 - **`services/api-py`:** `uv run pytest -m live` makes read-only calls to both testnets. `--dry-run` simulates transactions without broadcasting.
 - **`apps/upi-payer`:** dry run unless `UPI_LITE_LIVE=1`. `main.py check` and `main.py rehearse --upi-id <id> --inr 1` can't tap Pay, so use them to calibrate a phone. `main.py check` needs its `.env`.
 - **`agent-server`:** a run through the extension pays for real unless it's a rehearsal, and so does `app.demo_store`, which requires `--yes`. `uv run python -m tests.e2e_stack` starts the fake off-ramp the extension's tests use. Tests must never use a real `WalletAdmin`, because Circle allows only 5 agent wallets per chain. The extension's browser tests delete every agent they find, so stop any real agent server first. `e2e_stack` refuses to start while `:8790` is in use.
-- **`apps/web`:** `npm run build` also type-checks. Browser tests use installed Chrome at phone size. `e2e/live.spec.ts` sends real testnet transactions and runs only when its environment variables are set.
+- **`apps/web`:** `npm run build` also type-checks, and builds `extension/` into the zip the Agents Hub offers, so it needs the `zip` command. `npm run dev` doesn't make that zip, so run `npm run pack:extension` first to try the download there. Browser tests use installed Chrome at phone size. `e2e/live.spec.ts` sends real testnet transactions and runs only when its environment variables are set.
+- **`services/arkiv-board`:** the publisher holds the Arkiv key and writes public, lasting records using test GLM. `npm test` uses a fake Arkiv. `npm run verify` only reads. `npm run reconcile` shows writes with an uncertain outcome, which block all later writes until closed. Nothing is ever resent automatically.
 - **`contracts`:** run `git submodule update --init --recursive` first. `ARC_RPC_URL` and `WHITECHAIN_RPC_URL` enable the fork tests in `test/fork/`.
 
 ## How a payment flows
@@ -53,7 +55,9 @@ There's no shared package between these projects, so a change on one side needs 
 
 - **`viewToken`:** `derive_view_token` in `services/api-py/app/quote_service.py` and `apps/upi-payer/agent.py` must match. Both test files hold the same test vector, and `VIEW_TOKEN_SECRET` must be the same on the server and the payer.
 - **API paths on the shared hostname:** a new top-level route goes in `apps/web/deploy/Caddyfile` and `API_PATHS` in `apps/web/vite.config.ts`. The web app can't use those paths for its own pages.
+- **The hosted agent server:** `HOSTED` in `extension/src/connection.ts` must match `/agent-api` in `apps/web/deploy/Caddyfile`.
 - **Hosts the browser calls directly:** `connect-src` in `apps/web/deploy/Caddyfile` must list them, or the feature works everywhere except production. If the backend's `ARC_RPC_URL` changes the Arc RPC in `/config`, change it there too.
+- **What an agent can publish:** `validateOp` in `services/arkiv-board/src/ops.ts` refuses any field it doesn't know, and `card_fields` and `receipt_fields` in `agent-server/app/arkiv_outbox.py` must match it. `CATEGORIES`, `AVATARS` and `COLOURS` are checked against `agent-server/app/templates.py` by a test. The web app's copies are in `apps/web/src/lib/arkiv.ts`, and its avatars are copied from `extension/static/avatars/`.
 - **UPI QR parsing:** `services/api-py/app/qr.py` has the final say, and `apps/web/src/lib/upi.ts` and `agent-server/app/payment/qr.py` mirror it. The agent also repairs a QR whose link reads `upi:\\/\\/pay?`, so the backend receives a normal link. The web app doesn't do this yet, and would refuse such a QR.
 
 ## Design decisions that aren't obvious
@@ -68,8 +72,12 @@ There's no shared package between these projects, so a change on one side needs 
 - **Clicks are real input through `chrome.debugger`,** because sites such as Swiggy ignore scripted clicks. It's attached only to the run's tab, after the site check, and only during a run.
 - **`openai_base` can point at any service with OpenAI's API.** Agents' instructions, profiles and page text go there on every step, so choose it with that in mind.
 - **A profile stays out of events, logs and webhooks.** `AgentRun.redact` hides values a model repeats, and `callbacks.py` never receives a profile.
-- **The agent reports the payer's result, not `COMPLETED`.** `app/payment/results.py` reads the payer's ledger, read-only.
+- **The agent reports the payer's result, not `COMPLETED`.** `app/payment/results.py` reads the payer's ledger, read-only, or on a hosted server what `main.py report` sent it.
 - **The agent server checks `Origin`.** Only the extension may use it from a browser, or any website could drive a server that can spend money.
+- **A hosted agent server must be opened on purpose.** Any script can fake an `Origin`, so behind a proxy it refuses everything unless `AGENT_ACCESS_CODES` or `AGENT_OPEN_ACCESS=1` is set. The demo uses `AGENT_OPEN_ACCESS=1`, so anyone can use its agents and a live payer would spend real rupees for them.
+- **Payer results have their own token.** With `PAYER_RESULTS_TOKEN` set, the server trusts `main.py report` from the payer's machine and not a ledger file. Nobody else must be able to say a payment was made.
+- **A public record can never affect a payment.** The agent server queues Arkiv requests in a table and a separate thread delivers them, so `machine.py` and `payment/` must never import `arkiv_outbox.py`. Publishing is off for each agent until a person turns it on. With `ARKIV_PUBLISHER_URL` unset, nothing is published.
+- **Arkiv readers filter on `$creator`,** because anyone can write an entity with our schema names. See `arkiv/schema.md`.
 - **Web wallets:** plain EIP-1193 and EIP-6963, with no web3 library, because the backend builds every typed-data payload. An installed PWA has no injected wallet, so phones open the app in MetaMask's browser.
 
 ## Deployment
@@ -79,6 +87,8 @@ One Azure host serves the web app and the API through Caddy. It runs copies of t
 - **Backend:** `/opt/rupeerail`, under the `rupeerail` systemd service, with its database in `/var/lib/rupeerail`.
 - **Secrets:** `/etc/rupeerail/`.
 - **Web app:** `/var/www/rupeerail`. Steps are in `apps/web/README.md`.
+- **Arkiv read service:** `/opt/rupeerail/arkiv-board`, under the `rupeerail-arkiv` systemd service on port 8792, using its own Node in `/opt/rupeerail/node`. It holds an access key in `/etc/rupeerail/arkiv.env` and no signing key. The publisher runs beside the agent server, never here.
+- **Agent server:** `/opt/rupeerail/agent-server`, under the `rupeerail-agents` systemd service on port 8790, with its database in `/var/lib/rupeerail-agents` and secrets in `/etc/rupeerail/agents.env`. Steps are in `agent-server/README.md`. It's open to anyone (`AGENT_OPEN_ACCESS=1`), and rehearsal-only because the Circle CLI isn't installed there, so no wallet can be set up and a real run is refused. Logging in to Circle there enables real payments, so restrict the payer first. It holds no Arkiv key.
 - **`apps/upi-payer`:** runs on the machine with the phone attached, and needs Google Pay open and the phone unlocked. Tap coordinates are for a 1080x2408 screen.
 
 ## More detail
@@ -87,7 +97,7 @@ One Azure host serves the web app and the API through Caddy. It runs copies of t
 |---|---|
 | `README-agents.md` | The long-lived agents plan |
 | `docs/backend-notes.md`, `docs/verify-log.md` | Backend findings and tested answers for the plan |
-| `arkiv/schema.md` | Arkiv payout board design |
+| `arkiv/` | Arkiv entities, queries and the prize write-ups |
 | `README-backend.md` | API, environment variables, backend internals. It cites handoff files that aren't in the repo |
 | `apps/web/README.md`, `apps/upi-payer/README.md` | Those apps' setup |
 | `contracts/README.md` | Contract tests and deployment |

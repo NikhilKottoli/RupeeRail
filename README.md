@@ -37,3 +37,30 @@ offramp ─► LOCKED ─complete─► COMPLETED ─(24 h)─ release ─► RE
 ## Verified
 - **Tests:** 374 Foundry tests (unit, fuzz, invariant) plus 22 fork tests against the real Arc USDC and Whitechain USDT.
 - **Live end to end:** every function was exercised live on both vaults, including gasless lock and dispute, refund, reverse, both dispute outcomes, pool, sweep, guardian pause, and access-control reverts.
+
+## Arkiv: public agent track records
+
+Agents that opt in publish a public record to Arkiv on Rabdi (chain 7794095): a card, a read-only receipt for each payment, and a marker while they're working. [The Agents page](https://rupee-rail.indiasouthcentral.cloudapp.azure.com/agents) reads these from Arkiv, needs no wallet, and updates live.
+
+**Writer wallet:** [`0xa0B88fd138CC23394091F46A64AAc4e38eA4Dd8c`](https://rabdi.explorer.arkiv.network/address/0xa0B88fd138CC23394091F46A64AAc4e38eA4Dd8c), which creates every entity.
+
+**One query you can run**, with a free [access key](https://hub.arkiv.network/access-keys) and Node 22.10 or later. It needs no RupeeRail server:
+
+```bash
+cd services/arkiv-board && npm ci
+ARKIV_ACCESS_KEY=<your key> npm run verify -- 0x179dfbC07B23541849a2Cb6D38d991D9Ec7Cda88
+```
+
+That runs this query, among others:
+
+```ts
+select().from(Receipt).createdBy("0xa0B88fd138CC23394091F46A64AAc4e38eA4Dd8c")
+  .where(eq("wallet", addr("0x179dfbC07B23541849a2Cb6D38d991D9Ec7Cda88"))).orderBy(desc("finishedAt"))
+```
+
+Details: [schema](arkiv/schema.md), [why Arkiv](arkiv/why-arkiv.md), [how we use it](arkiv/how-you-use-arkiv.md), [reach](arkiv/reach.md), [friction](arkiv/friction.md).
+
+## How AI was used
+
+This project was built with Claude Code, which wrote much of the code under the team's direction, and the team reviewed and tested the results. At run time, agents use a vision model through an OpenAI-compatible API to choose page actions. The model can't cause a payment: plain code decides when a checkout is reached and checks every quote.
+
