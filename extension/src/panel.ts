@@ -80,13 +80,34 @@ function setAvatar(id: string, agent: { avatar: string; colour: string }): void 
   box.replaceChildren(image);
 }
 
-/** One short line about an agent's money or setup, for its card. */
-function budgetLine(agent: Agent): { text: string; attention: boolean } {
+/** For display only. It cuts rather than rounds, so it never shows more than there is. */
+export function twoDecimals(value: string): string {
+  const [whole, fraction = ""] = value.split(".");
+  return `${whole}.${fraction.padEnd(2, "0").slice(0, 2)}`;
+}
+
+/** Why an agent has no budget to show right now, or null when it does. */
+function walletNote(agent: Agent): { text: string; attention: boolean } | null {
   if (SETTING_UP.has(agent.wallet_status)) return { text: `Setting up its wallet: ${agent.wallet_detail || "starting"}…`, attention: false };
   if (agent.wallet_status === "needs_funds") return { text: "Its wallet needs USDC", attention: true };
   if (agent.wallet_status === "failed") return { text: "Wallet setup needs attention", attention: true };
-  if (!agent.wallet || agent.wallet.unavailable) return { text: "Budget unavailable right now", attention: false };
-  return { text: `${agent.wallet.budget_left} ${agent.wallet.symbol ?? "USDC"} budget left`, attention: false };
+  if (!agent.wallet || agent.wallet.unavailable || agent.wallet.budget_left === undefined) return { text: "Budget unavailable right now", attention: false };
+  return null;
+}
+
+/** A budget as a large number with its unit beside it. The exact amount stays in the tooltip. */
+function budgetEl(agent: Agent, unit: string): HTMLElement {
+  const box = document.createElement("span");
+  box.className = "budget-figure";
+  box.title = `${agent.wallet!.budget_left} ${agent.wallet!.symbol ?? "USDC"}`;
+  const amount = document.createElement("span");
+  amount.className = "amount";
+  amount.textContent = twoDecimals(agent.wallet!.budget_left!);
+  const label = document.createElement("span");
+  label.className = "unit";
+  label.textContent = `${agent.wallet!.symbol ?? "USDC"} ${unit}`;
+  box.append(amount, " ", label);
+  return box;
 }
 
 // ---- Agents -------------------------------------------------------------------------------------
@@ -130,12 +151,18 @@ function renderCards(agents: Agent[]): void {
     const summary = document.createElement("span");
     summary.className = "summary";
     summary.textContent = agent.description;
-    const line = budgetLine(agent);
-    const budget = document.createElement("span");
-    budget.className = line.attention ? "budget attention" : "budget";
-    budget.textContent = line.text;
-    text.append(name, summary, budget);
+    text.className = "card-text";
+    text.append(name, summary);
     card.append(avatarEl(agent.avatar, agent.colour), text);
+    const note = walletNote(agent);
+    if (note) {
+      const budget = document.createElement("span");
+      budget.className = note.attention ? "card-note attention" : "card-note";
+      budget.textContent = note.text;
+      card.append(budget);
+    } else {
+      card.append(budgetEl(agent, "left"));
+    }
     card.addEventListener("click", () => void openAgent(agent.id));
     item.append(card);
     list.append(item);
@@ -183,9 +210,15 @@ function renderWallet(agent: Agent): void {
   box.replaceChildren();
   const needsAction = agent.wallet_status === "needs_funds" || agent.wallet_status === "failed";
   box.className = needsAction ? "wallet attention" : "wallet";
-  const line = document.createElement("div");
-  line.textContent = budgetLine(agent).text;
-  box.append(line);
+  const note = walletNote(agent);
+  if (note) {
+    const line = document.createElement("div");
+    line.className = "wallet-note";
+    line.textContent = note.text;
+    box.append(line);
+  } else {
+    box.append(budgetEl(agent, "budget left"));
+  }
   if (agent.wallet) {
     const address = document.createElement("div");
     const link = document.createElement("a");
@@ -195,8 +228,9 @@ function renderWallet(agent: Agent): void {
     link.rel = "noreferrer";
     link.textContent = `${agent.wallet.address.slice(0, 8)}…${agent.wallet.address.slice(-6)}`;
     link.title = agent.wallet.address;
+    address.className = "wallet-line";
     address.append("Wallet ", link);
-    if (agent.wallet.balance) address.append(` · ${agent.wallet.balance} ${agent.wallet.symbol ?? "USDC"}`);
+    if (agent.wallet.balance) address.append(` · ${twoDecimals(agent.wallet.balance)} ${agent.wallet.symbol ?? "USDC"} in wallet`);
     box.append(address);
     if (needsAction) {
       const full = document.createElement("div");
@@ -245,22 +279,32 @@ async function renderHistory(id: string): Promise<void> {
     status.className = `status ${TONES[name] ?? ""}`;
     status.textContent = TITLES[name] ?? name;
     const when = new Date(run.started * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-    const money = run.amount_paise != null ? ` · ₹${run.amount_paise / 100}` : "";
     const site = run.site ? ` · ${run.site}` : "";
+    const body = document.createElement("div");
+    body.className = "history-text";
     const line = document.createElement("div");
+    line.className = "history-prompt";
     line.textContent = run.prompt;
     const meta = document.createElement("div");
-    meta.className = "muted";
-    meta.style.margin = "0";
-    meta.textContent = `${when}${site}${money}`;
-    item.append(status, line, meta);
+    meta.className = "history-meta";
+    meta.textContent = `${when}${site}`;
+    body.append(line, meta);
     if (run.detail && name !== "PAID") {
       const detail = document.createElement("div");
-      detail.className = "muted";
-      detail.style.margin = "0";
+      detail.className = "history-meta";
       detail.textContent = run.detail;
-      item.append(detail);
+      body.append(detail);
     }
+    const side = document.createElement("div");
+    side.className = "history-side";
+    if (run.amount_paise != null) {
+      const money = document.createElement("span");
+      money.className = "amount";
+      money.textContent = `₹${run.amount_paise / 100}`;
+      side.append(money);
+    }
+    side.append(status);
+    item.append(body, side);
     list.append(item);
   }
 }
@@ -279,6 +323,13 @@ function enterRun(agent: { name: string; avatar: string; colour: string }, promp
   $<HTMLButtonElement>("stop").disabled = false;
   $("resume").hidden = true;
   $("done").hidden = true;
+  setRunState("Working…");
+}
+
+/** What the agent is doing now, or nothing once it's finished. */
+function setRunState(text: string | null): void {
+  $("run-state").hidden = text === null;
+  if (text) $("run-state-text").textContent = text;
 }
 
 function showOutcome(status: string, message: string): void {
@@ -292,6 +343,7 @@ let runAgent: { avatar: string; colour: string } | null = null;
 
 function addStep(event: any): void {
   const item = document.createElement("li");
+  item.dataset.stage = event.stage;
   if (runAgent) item.append(avatarEl(runAgent.avatar, runAgent.colour, "small"));
   const body = document.createElement("div");
   const stage = document.createElement("span");
@@ -317,18 +369,23 @@ function onEvent(event: any): void {
   }
   if (event.stage === "need_help") {
     $("resume").hidden = false;
+    setRunState("Waiting for you");
     const box = $("outcome");
     box.hidden = false;
     box.className = "warn";
     box.textContent = `${$("run-name").textContent} needs help: ${event.message}`;
   }
-  if (event.stage === "result") showOutcome(event.status, event.message);
+  if (event.stage === "result") {
+    showOutcome(event.status, event.message);
+    setRunState(null);
+  }
 }
 
 function runEnded(): void {
   $("stop").hidden = true;
   $("resume").hidden = true;
   $("done").hidden = false;
+  setRunState(null);
 }
 
 $<HTMLFormElement>("prompt-form").addEventListener("submit", async (event) => {
@@ -355,12 +412,14 @@ $("rehearse").addEventListener("change", () => {
 
 $("stop").addEventListener("click", () => {
   $<HTMLButtonElement>("stop").disabled = true;
+  setRunState("Stopping…");
   void chrome.runtime.sendMessage({ kind: "stop" });
 });
 
 $("resume").addEventListener("click", () => {
   $("resume").hidden = true;
   $("outcome").hidden = true;
+  setRunState("Working…");
   void chrome.runtime.sendMessage({ kind: "resume" });
 });
 

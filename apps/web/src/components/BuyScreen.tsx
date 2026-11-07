@@ -1,13 +1,8 @@
 import ChevronRight from "@mui/icons-material/ChevronRight";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
-import Divider from "@mui/material/Divider";
 import InputAdornment from "@mui/material/InputAdornment";
-import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -19,6 +14,7 @@ import { api, type AppConfig, type OnrampOrder } from "../lib/api";
 import { formatDateTime, formatInr, shortAddress } from "../lib/format";
 import { describeOnramp, recentOnramps, rememberOnramp, type LocalOnramp, type OnrampReturn } from "../lib/onramp";
 import { paiseToRupeesString, rupeesToPaise } from "../lib/upi";
+import { ActionRow, GroupedBlock, GroupedButton, GroupedDetail, GroupedList, heroAction } from "./Grouped";
 import OnrampStatus from "./OnrampStatus";
 
 interface Props {
@@ -29,15 +25,6 @@ interface Props {
 }
 
 type Stage = "form" | "review" | "status";
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <Stack direction="row" sx={{ justifyContent: "space-between", gap: 2 }}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant="body2" sx={{ textAlign: "right", overflowWrap: "anywhere" }}>{value}</Typography>
-    </Stack>
-  );
-}
 
 function RecentPurchase({ item, onOpen }: { item: LocalOnramp; onOpen: () => void }) {
   const [order, setOrder] = useState<OnrampOrder | null>(null);
@@ -51,10 +38,10 @@ function RecentPurchase({ item, onOpen }: { item: LocalOnramp; onOpen: () => voi
   const primary = order ? `${order.amount} ${order.symbol ?? ""} for ${formatInr(order.inrPaise)}` : "Purchase";
   const secondary = `${order ? describeOnramp(order).title : "…"} · ${formatDateTime(Math.floor(item.createdAt / 1000))}`;
   return (
-    <ListItemButton onClick={onOpen} sx={{ borderRadius: 2 }}>
+    <GroupedButton onClick={onOpen}>
       <ListItemText primary={primary} secondary={secondary} />
       <ChevronRight color="action" />
-    </ListItemButton>
+    </GroupedButton>
   );
 }
 
@@ -127,6 +114,9 @@ export default function BuyScreen({ config, address, returned = null }: Props) {
   };
 
   const errorAlert = error && <Alert severity="error" role="alert">{error}</Alert>;
+  const testNote = config.onramp?.testMode && (
+    <Alert severity="info">Test mode: Razorpay won't charge real money. Pay with one of its test cards.</Alert>
+  );
   const busyLine = busy && (
     <Stack direction="row" spacing={1.5} role="status" sx={{ alignItems: "center" }}>
       <CircularProgress size={20} />
@@ -138,7 +128,7 @@ export default function BuyScreen({ config, address, returned = null }: Props) {
     return (
       <Stack spacing={2}>
         <OnrampStatus config={config} orderId={statusId} justPaid={justPaid} showPayButton />
-        <Button variant="outlined" onClick={reset}>Buy more</Button>
+        <Button variant="outlined" onClick={reset} sx={heroAction}>Buy more</Button>
       </Stack>
     );
   }
@@ -146,33 +136,31 @@ export default function BuyScreen({ config, address, returned = null }: Props) {
   if (stage === "review" && order?.checkout) {
     return (
       <Stack spacing={2}>
-        <Typography variant="h5" component="h2">Review purchase</Typography>
-        <Card>
-          <CardContent>
-            <Stack spacing={1.5}>
-              <div>
-                <Typography variant="h4" component="p">{order.amount} {order.symbol}</Typography>
-                <Typography color="text.secondary">for {formatInr(order.inrPaise)}</Typography>
-              </div>
-              <Divider />
-              <Row label="You pay" value={formatInr(order.inrPaise)} />
-              <Row label="You get" value={`${order.amount} ${order.symbol ?? ""}`} />
-              <Row label="Rate" value={`₹${order.rate} per ${order.symbol ?? "token"}`} />
-              <Row label="Network" value={config.chains[order.chain]?.name ?? order.chain} />
-              <Row label="To wallet" value={shortAddress(order.wallet)} />
-              <Row label="Rate held until" value={formatDateTime(order.checkout.expiresAt)} />
-            </Stack>
-          </CardContent>
-        </Card>
+        <Typography variant="h4" component="h2">Review purchase</Typography>
+        <GroupedList aria-label="Purchase details">
+          <GroupedBlock>
+            <Typography variant="h3" component="p">{order.amount} {order.symbol}</Typography>
+            <Typography color="text.secondary" sx={{ mt: 0.5 }}>for {formatInr(order.inrPaise)}</Typography>
+          </GroupedBlock>
+          <GroupedDetail label="You pay" value={formatInr(order.inrPaise)} />
+          <GroupedDetail label="You get" value={`${order.amount} ${order.symbol ?? ""}`} />
+          <GroupedDetail label="Rate" value={`₹${order.rate} per ${order.symbol ?? "token"}`} />
+          <GroupedDetail label="Network" value={config.chains[order.chain]?.name ?? order.chain} />
+          <GroupedDetail label="To wallet" value={shortAddress(order.wallet)} />
+          <GroupedDetail label="Rate held until" value={formatDateTime(order.checkout.expiresAt)} />
+        </GroupedList>
+        {testNote}
         <Typography variant="body2" color="text.secondary">
           You'll pay on Razorpay with UPI, card or netbanking, then come back here automatically.
         </Typography>
         {errorAlert}
         {busyLine}
-        <Button variant="contained" size="large" disabled={!!busy} onClick={payWithRazorpay}>
-          Pay {formatInr(order.inrPaise)} with Razorpay
-        </Button>
-        <Button disabled={!!busy} onClick={reset}>Cancel</Button>
+        <ActionRow>
+          <Button variant="contained" size="large" disabled={!!busy} onClick={payWithRazorpay}>
+            Pay {formatInr(order.inrPaise)} with Razorpay
+          </Button>
+          <Button variant="outlined" size="large" disabled={!!busy} onClick={reset}>Cancel</Button>
+        </ActionRow>
       </Stack>
     );
   }
@@ -183,51 +171,58 @@ export default function BuyScreen({ config, address, returned = null }: Props) {
         <Typography variant="h4" component="h2">Buy stablecoins</Typography>
         <Typography color="text.secondary">Pay in rupees and get tokens in your wallet.</Typography>
       </Stack>
-      <TextField
-        label="Amount"
-        value={inr}
-        onChange={(e) => setInr(e.target.value)}
-        error={!!amountError}
-        helperText={amountError ?? `Between ${formatInr(minPaise)} and ${formatInr(maxPaise)}`}
-        slotProps={{
-          input: { startAdornment: <InputAdornment position="start">₹</InputAdornment> },
-          htmlInput: { inputMode: "decimal", autoComplete: "off" },
-        }}
-      />
-      <div>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }} id="buy-token">Get</Typography>
-        <ToggleButtonGroup
-          exclusive
-          fullWidth
-          color="primary"
-          value={chainKey}
-          aria-labelledby="buy-token"
-          onChange={(_, value) => value && setChainKey(value)}
-        >
-          {chainKeys.map((key) => (
-            <ToggleButton key={key} value={key} sx={{ textTransform: "none", minHeight: 48, borderRadius: 3 }}>
-              {config.chains[key].token.symbol} · {config.chains[key].name}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
-          Sent to {shortAddress(address)} on {chain.name}
-        </Typography>
-      </div>
+      {testNote}
+      <GroupedList>
+        <GroupedBlock>
+          <Stack spacing={2.5}>
+            <TextField
+              label="Amount"
+              value={inr}
+              onChange={(e) => setInr(e.target.value)}
+              error={!!amountError}
+              helperText={amountError ?? `Between ${formatInr(minPaise)} and ${formatInr(maxPaise)}`}
+              slotProps={{
+                input: { startAdornment: <InputAdornment position="start">₹</InputAdornment> },
+                htmlInput: { inputMode: "decimal", autoComplete: "off" },
+              }}
+            />
+            <div>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }} id="buy-token">Get</Typography>
+              <ToggleButtonGroup
+                exclusive
+                fullWidth
+                color="primary"
+                value={chainKey}
+                aria-labelledby="buy-token"
+                onChange={(_, value) => value && setChainKey(value)}
+              >
+                {chainKeys.map((key) => (
+                  <ToggleButton key={key} value={key}>
+                    {config.chains[key].token.symbol} · {config.chains[key].name}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
+                Sent to {shortAddress(address)} on {chain.name}
+              </Typography>
+            </div>
+          </Stack>
+        </GroupedBlock>
+      </GroupedList>
       {errorAlert}
       {busyLine}
-      <Button variant="contained" size="large" disabled={!!busy || paise === null || !!amountError} onClick={getRate}>
+      <Button variant="contained" size="large" disabled={!!busy || paise === null || !!amountError} onClick={getRate} sx={heroAction}>
         {paise !== null && !amountError ? `Continue with ${formatInr(paise)}` : "Continue"}
       </Button>
 
       {recent.length > 0 && (
         <Stack spacing={1}>
           <Typography variant="subtitle2" component="h3" color="text.secondary">Recent purchases</Typography>
-          <List disablePadding>
+          <GroupedList>
             {recent.map((item) => (
               <RecentPurchase key={item.orderId} item={item} onOpen={() => openStatus(item.orderId)} />
             ))}
-          </List>
+          </GroupedList>
         </Stack>
       )}
     </Stack>

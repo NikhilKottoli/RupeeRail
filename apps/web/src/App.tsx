@@ -20,20 +20,27 @@ import Toolbar from "@mui/material/Toolbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import Stack from "@mui/material/Stack";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { useCallback, useEffect, useRef, useState } from "react";
 import BuyScreen from "./components/BuyScreen";
 import ConnectScreen from "./components/ConnectScreen";
 import HistoryScreen from "./components/HistoryScreen";
 import OnrampStatus from "./components/OnrampStatus";
 import PayScreen from "./components/PayScreen";
+import SideNav from "./components/SideNav";
 import { api, type AppConfig } from "./lib/api";
 import { shortAddress } from "./lib/format";
-import { parseOnrampReturn, stripOnrampReturn } from "./lib/onramp";
+import { isUnverifiedReturn, parseOnrampReturn, stripOnrampReturn } from "./lib/onramp";
 import {
   connectWallet, discoverWallets, existingAccount, walletErrorMessage, type Eip1193Provider, type WalletOption,
 } from "./lib/wallet";
 
 const WALLET_KEY = "rupeerail.wallet";
+
+type Tab = "pay" | "buy" | "history";
+const PAY_TAB = { value: "pay" as const, label: "Pay", icon: <QrCodeScanner /> };
+const BUY_TAB = { value: "buy" as const, label: "Buy", icon: <AddCardOutlined /> };
+const HISTORY_TAB = { value: "history" as const, label: "History", icon: <ReceiptLongOutlined /> };
 
 interface InstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -49,10 +56,22 @@ export default function App() {
   const [walletError, setWalletError] = useState<string | null>(null);
   // Razorpay sends the browser back to /?onramp=<orderId>&payment=received after a purchase.
   const [returned, setReturned] = useState(() => parseOnrampReturn(window.location.search));
-  const [tab, setTab] = useState<"pay" | "buy" | "history">(() => (returned ? "buy" : "pay"));
+  const [unverifiedReturn, setUnverifiedReturn] = useState(() => isUnverifiedReturn(window.location.search));
+  const [tab, setTab] = useState<Tab>(() => (returned ? "buy" : "pay"));
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const restored = useRef(false);
+  // Material 3's "expanded" width: from here the bottom bar becomes a sidebar.
+  const wide = useMediaQuery("(min-width:840px)", { noSsr: true });
+  const sidebar = wide && !!address;
+
+  // Buy is offered only when the server collects through Razorpay. The manual rail needs an operator and a real UPI ID.
+  const tabs = config?.onramp?.rail === "razorpay" ? [PAY_TAB, BUY_TAB, HISTORY_TAB] : [PAY_TAB, HISTORY_TAB];
+
+  const chooseTab = (value: Tab) => {
+    setReturned(null);  // the Razorpay return is shown once; coming back to Buy starts fresh
+    setTab(value);
+  };
 
   const loadConfig = useCallback(() => {
     setConfigError(null);
@@ -61,7 +80,7 @@ export default function App() {
   useEffect(loadConfig, [loadConfig]);
   useEffect(() => {
     // Read once, then drop it from the address bar so a reload doesn't show the return again.
-    if (parseOnrampReturn(window.location.search)) {
+    if (parseOnrampReturn(window.location.search) || isUnverifiedReturn(window.location.search)) {
       window.history.replaceState(window.history.state, "", stripOnrampReturn(window.location.href));
     }
   }, []);
@@ -134,81 +153,83 @@ export default function App() {
   };
 
   return (
-    <Box sx={{ minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-      <AppBar position="sticky" elevation={0} color="transparent" sx={{ bgcolor: "background.default", pt: "env(safe-area-inset-top)" }}>
-        <Toolbar sx={{ gap: 1 }}>
-          <Typography variant="h6" component="h1" sx={{ flexGrow: 1 }}>RupeeRail</Typography>
-          {installPrompt && (
-            <Tooltip title="Install app">
-              <IconButton onClick={install} aria-label="Install app"><InstallMobileOutlined /></IconButton>
-            </Tooltip>
-          )}
-          {address && (
-            <Chip
-              icon={<AccountBalanceWalletOutlined />}
-              label={shortAddress(address)}
-              variant="outlined"
-              onClick={(e) => setMenuAnchor(e.currentTarget)}
-              aria-label="Wallet menu"
-            />
-          )}
-        </Toolbar>
-      </AppBar>
-      <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
-        <MenuItem
-          onClick={() => {
-            setMenuAnchor(null);
-            disconnect();
-          }}
-        >
-          Disconnect
-        </MenuItem>
-      </Menu>
+    <Box sx={{ minHeight: "100dvh", display: "flex" }}>
+      {sidebar && <SideNav tabs={tabs} value={tab} onChange={chooseTab} />}
+      <Box sx={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <AppBar position="sticky" elevation={0} color="transparent" sx={{ bgcolor: "background.default", pt: "env(safe-area-inset-top)" }}>
+          <Toolbar sx={{ gap: 1 }}>
+            {sidebar
+              ? <Box sx={{ flexGrow: 1 }} />
+              : <Typography variant="h6" component="h1" sx={{ flexGrow: 1 }}>RupeeRail</Typography>}
+            {installPrompt && (
+              <Tooltip title="Install app">
+                <IconButton onClick={install} aria-label="Install app"><InstallMobileOutlined /></IconButton>
+              </Tooltip>
+            )}
+            {address && (
+              <Chip
+                icon={<AccountBalanceWalletOutlined />}
+                label={shortAddress(address)}
+                variant="outlined"
+                onClick={(e) => setMenuAnchor(e.currentTarget)}
+                aria-label="Wallet menu"
+              />
+            )}
+          </Toolbar>
+        </AppBar>
+        <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
+          <MenuItem
+            onClick={() => {
+              setMenuAnchor(null);
+              disconnect();
+            }}
+          >
+            Disconnect
+          </MenuItem>
+        </Menu>
 
-      <Container maxWidth="sm" component="main" sx={{ flexGrow: 1, pt: 1, pb: address ? 12 : 4 }}>
-        {configError ? (
-          <Alert severity="error" action={<Button color="inherit" size="small" onClick={loadConfig}>Retry</Button>}>
-            {configError}
-          </Alert>
-        ) : !config || wallets === null ? (
-          <Box sx={{ display: "grid", placeItems: "center", py: 10 }}>
-            <CircularProgress aria-label="Loading" />
-          </Box>
-        ) : !address || !provider ? (
-          returned ? (
-            <Stack spacing={3}>
-              <OnrampStatus config={config} orderId={returned.orderId} justPaid={returned.payment === "received"} />
+        <Container maxWidth="sm" component="main" sx={{ flexGrow: 1, pt: 1, pb: address && !sidebar ? 12 : 4 }}>
+          {unverifiedReturn && (
+            <Alert severity="warning" onClose={() => setUnverifiedReturn(false)} sx={{ mb: 2 }}>
+              We couldn't check that return from Razorpay. If you paid, we still confirm it with Razorpay directly, and your tokens are sent once it's confirmed.
+            </Alert>
+          )}
+          {configError ? (
+            <Alert severity="error" action={<Button color="inherit" size="small" onClick={loadConfig}>Retry</Button>}>
+              {configError}
+            </Alert>
+          ) : !config || wallets === null ? (
+            <Box sx={{ display: "grid", placeItems: "center", py: 10 }}>
+              <CircularProgress aria-label="Loading" />
+            </Box>
+          ) : !address || !provider ? (
+            returned ? (
+              <Stack spacing={3}>
+                <OnrampStatus config={config} orderId={returned.orderId} justPaid={returned.payment === "received"} />
+                <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
+              </Stack>
+            ) : (
               <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
-            </Stack>
+            )
+          ) : tab === "pay" ? (
+            <PayScreen key={address} config={config} provider={provider} address={address} />
+          ) : tab === "buy" ? (
+            <BuyScreen key={address} config={config} address={address} returned={returned} />
           ) : (
-            <ConnectScreen wallets={wallets} connecting={connecting} error={walletError} onConnect={connect} />
-          )
-        ) : tab === "pay" ? (
-          <PayScreen key={address} config={config} provider={provider} address={address} />
-        ) : tab === "buy" ? (
-          <BuyScreen key={address} config={config} address={address} returned={returned} />
-        ) : (
-          <HistoryScreen key={address} config={config} provider={provider} address={address} />
-        )}
-      </Container>
+            <HistoryScreen key={address} config={config} provider={provider} address={address} />
+          )}
+        </Container>
 
-      {address && (
+      </Box>
+
+      {address && !sidebar && (
         <Paper
           square
           elevation={0}
-          sx={{ position: "fixed", bottom: 0, left: 0, right: 0, borderTop: 1, borderColor: "divider", pb: "env(safe-area-inset-bottom)", zIndex: "appBar" }}
+          sx={{ position: "fixed", bottom: 0, left: 0, right: 0, bgcolor: "background.surface", pb: "env(safe-area-inset-bottom)", zIndex: "appBar" }}
         >
-          <BottomNavigation
-            showLabels
-            value={tab}
-            onChange={(_, value) => {
-              setReturned(null);  // the Razorpay return is shown once; coming back to Buy starts fresh
-              setTab(value);
-            }}
-          >
-            <BottomNavigationAction label="Pay" value="pay" icon={<QrCodeScanner />} />
-            <BottomNavigationAction label="Buy" value="buy" icon={<AddCardOutlined />} />
-            <BottomNavigationAction label="History" value="history" icon={<ReceiptLongOutlined />} />
+          <BottomNavigation showLabels value={tab} onChange={(_, value) => chooseTab(value)}>
+            {tabs.map(({ value, label, icon }) => <BottomNavigationAction key={value} label={label} value={value} icon={icon} />)}
           </BottomNavigation>
         </Paper>
       )}

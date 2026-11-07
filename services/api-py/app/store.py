@@ -364,11 +364,16 @@ class Store:
         self._exec(f"UPDATE razorpay_links SET updated_at = ?{sets} WHERE order_id = ?",
                    (now(), *fields.values(), order_id.lower()))
 
-    def razorpay_links_to_reconcile(self) -> list[dict]:
-        """Links someone told us about whose order hasn't been paid yet (or is stuck PAYING)."""
+    def razorpay_links_to_reconcile(self, open_after: int) -> list[dict]:
+        """Links to check with Razorpay: ones someone told us about whose order hasn't been paid yet (or is stuck
+        PAYING), and any order still waiting on a link that expired after `open_after`. The second kind covers a
+        payment whose callback and webhook both went missing. An order with a recorded mismatch waits for an operator.
+        """
         return self._all(
             "SELECT l.* FROM razorpay_links l JOIN onramp_orders o ON o.id = l.order_id "
-            "WHERE l.notified_at IS NOT NULL AND o.status IN ('AWAITING_FIAT', 'PAYING') ORDER BY l.notified_at")
+            "WHERE (l.notified_at IS NOT NULL AND o.status IN ('AWAITING_FIAT', 'PAYING')) "
+            "OR (o.status = 'AWAITING_FIAT' AND o.last_error IS NULL AND l.expires_at > ?) ORDER BY l.created_at",
+            (open_after,))
 
     def record_razorpay_event(self, event_id: str, name: str) -> bool:
         """True the first time an event id is seen, False for a redelivery."""

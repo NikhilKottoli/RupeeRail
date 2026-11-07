@@ -27,6 +27,8 @@ export interface AppConfig {
   limits: { minInrPaise: string; maxInrPaise: string; dailyUserInrPaise: string };
   spreadBps: number;
   quoteTtlSec: number;
+  /** Absent on a backend older than the Razorpay rail. */
+  onramp?: { rail: string; testMode: boolean };
 }
 
 export interface Account {

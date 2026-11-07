@@ -1,29 +1,61 @@
-:root { color-scheme: light dark; --primary: #1b5e9e; --on-primary: #fff; --danger: #ba1a1a; --muted: #5c6570; --line: #dfe2eb; --ok: #1b6e3c; --warn: #8a5100; --bg: #f8f9ff; --card: #fff; --text: #191c20; }
-@media (prefers-color-scheme: dark) { :root { --primary: #a3c9ff; --on-primary: #00315b; --danger: #ffb4ab; --muted: #c3c6cf; --line: #33353a; --ok: #7dd99a; --warn: #ffb95f; --bg: #101418; --card: #1d2024; --text: #e1e2e8; } }
+:root { color-scheme: light dark; --primary: #1b5e9e; --on-primary: #fff; --danger: #ba1a1a; --muted: #5c6570; --line: #dfe2eb; --ok: #1b6e3c; --warn: #8a5100; --bg: #f8f9ff; --card: #fff; --text: #191c20; --press: rgb(0 0 0 / 0.04); --ease-out: cubic-bezier(0.23, 1, 0.32, 1); --surface: #edf0f8; --surface-press: #e2e6f1; --tonal: #d3e4ff; --on-tonal: #001c38; --r-outer: 28px; --r-inner: 6px; }
+@media (prefers-color-scheme: dark) { :root { --primary: #a3c9ff; --on-primary: #00315b; --danger: #ffb4ab; --muted: #c3c6cf; --line: #33353a; --ok: #7dd99a; --warn: #ffb95f; --bg: #101418; --card: #1d2024; --text: #e1e2e8; --press: rgb(255 255 255 / 0.06); --surface: #1d2126; --surface-press: #272c33; --tonal: #2c4770; --on-tonal: #d3e4ff; } }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
-body { margin: 0; padding: 16px; font: 14px/1.45 Roboto, system-ui, sans-serif; color: var(--text); background: var(--bg); }
-h1 { margin: 0; font-size: 18px; font-weight: 500; }
-h2 { margin: 20px 0 6px; font-size: 14px; font-weight: 500; }
-.muted { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
+body { margin: 0; padding: 16px; font: 14px/1.45 Roboto, system-ui, sans-serif; font-variant-numeric: tabular-nums; color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+h1 { margin: 0; font-size: 22px; line-height: 1.2; font-weight: 500; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { margin: 24px 4px 10px; font-size: 16px; font-weight: 500; }
+.muted { color: var(--muted); font-size: 12px; margin: 4px 0 12px; text-wrap: pretty; }
 label { display: block; font-weight: 500; margin: 12px 0 4px; }
-label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; cursor: pointer; }
 label.check input { width: auto; margin-top: 3px; }
-textarea, input, select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; color: inherit; background: var(--card); }
+textarea, input, select { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 16px; font: inherit; color: inherit; background: var(--card); transition: border-color 150ms ease; }
+textarea:focus, input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 fieldset { margin: 12px 0 0; padding: 0; border: 0; }
 legend { padding: 0; font-weight: 500; }
-button { width: 100%; min-height: 44px; margin-top: 8px; border: 0; border-radius: 999px; font: inherit; font-weight: 500; background: var(--primary); color: var(--on-primary); cursor: pointer; }
-button:disabled { opacity: .5; cursor: default; }
+
+/* Buttons answer the moment they're pressed. Only the transform uses the stronger curve. */
+button { width: 100%; min-height: 52px; margin-top: 8px; border: 0; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 500; background: var(--primary); color: var(--on-primary); cursor: pointer; user-select: none; touch-action: manipulation; transition: transform 160ms var(--ease-out), border-radius 160ms var(--ease-out), background-color 150ms ease, border-color 150ms ease, opacity 150ms ease; }
+/* Material 3 Expressive: a pressed button's shape squares up a little as well as scaling. */
+button:active:not(:disabled) { transform: scale(0.97); border-radius: 18px; }
+button:disabled { opacity: 0.5; cursor: default; }
 button:focus-visible, .agent-card:focus-visible, .swatch:focus-visible, .avatar-choice:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 button.danger { background: var(--danger); color: #fff; }
-button.secondary { background: transparent; color: var(--primary); border: 1px solid var(--line); }
+button.secondary { background: var(--tonal); color: var(--on-tonal); }
 button.text { width: auto; min-height: 32px; margin: 0 0 8px; padding: 0; background: none; color: var(--primary); }
-.title { margin-bottom: 12px; }
+
+/* Header: a large headline, with a small crowd of agents beside it. */
+.title { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin: 4px 0 20px; }
+.title-text { flex: 1; min-width: 0; }
+.title h1 { font-size: 34px; line-height: 1.1; letter-spacing: -0.02em; }
+.title .muted { margin: 8px 0 0; font-size: 13px; }
+.cluster { position: relative; flex: none; width: 128px; height: 112px; }
+.cluster .avatar { position: absolute; box-shadow: 0 0 0 3px var(--bg); transition: opacity 280ms var(--ease-out), transform 280ms var(--ease-out); }
+.bot-robot { left: 36px; top: 26px; width: 62px; height: 62px; }
+.bot-chef { left: 0; top: 10px; width: 46px; height: 46px; }
+.bot-scientist { left: 84px; top: 0; width: 42px; height: 42px; }
+.bot-shopper { left: 88px; top: 66px; width: 40px; height: 40px; }
+.bot-traveller { left: 8px; top: 70px; width: 36px; height: 36px; }
+.cluster .bot-chef { transition-delay: 40ms; }
+.cluster .bot-scientist { transition-delay: 80ms; }
+.cluster .bot-shopper { transition-delay: 120ms; }
+.cluster .bot-traveller { transition-delay: 160ms; }
+@starting-style { .cluster .avatar { opacity: 0; transform: scale(0.9); } }
+.shape { position: absolute; display: block; background: var(--tonal); }
+.shape-a { left: 54px; top: 2px; width: 20px; height: 20px; border-radius: 7px; transform: rotate(18deg); }
+.shape-b { left: 58px; top: 92px; width: 16px; height: 16px; border-radius: 50%; }
+@media (max-width: 300px) { .cluster { display: none; } }
+
 .note { margin: 8px 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); overflow-wrap: anywhere; }
 .note.bad { border-color: var(--danger); color: var(--danger); }
 
-/* Avatars */
-.avatar { display: inline-block; flex: none; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: var(--line); }
+/* Moving between screens. Short, because it happens often. */
+section { transition: opacity 160ms var(--ease-out), transform 160ms var(--ease-out); }
+@starting-style { section { opacity: 0; transform: translateY(4px); } }
+
+/* Avatars. A faint inner edge keeps a pale colour from melting into the background. */
+.avatar { position: relative; display: inline-block; flex: none; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: var(--line); }
+.avatar::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.07); }
 .avatar img { display: block; width: 100%; height: 100%; }
 .avatar.large { width: 64px; height: 64px; }
 .avatar.small { width: 22px; height: 22px; }
@@ -38,39 +70,106 @@ button.text { width: auto; min-height: 32px; margin: 0 0 8px; padding: 0; backgr
 .identity { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
 .identity .muted { margin-bottom: 0; }
 .avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; margin-top: 8px; }
-.avatar-choice { width: 100%; height: auto; aspect-ratio: 1; min-height: 0; margin: 0; padding: 4px; border-radius: 50%; background: transparent; border: 2px solid transparent; }
+.avatar-choice { width: 100%; height: auto; aspect-ratio: 1; min-height: 0; margin: 0; padding: 4px; border-radius: 50% !important; background: transparent; border: 2px solid transparent; }
 .avatar-choice .avatar { width: 100%; height: 100%; }
+.avatar-choice:active:not(:disabled) { transform: scale(0.94); }
 .avatar-choice[aria-checked="true"] { border-color: var(--primary); }
 .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
-.swatch { width: 28px; height: 28px; min-height: 0; margin: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+.swatch { width: 28px; height: 28px; min-height: 0; margin: 0; padding: 0; border-radius: 50% !important; border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.07); }
+.swatch:active:not(:disabled) { transform: scale(0.9); }
 .swatch[aria-checked="true"] { border-color: var(--text); }
 
-/* Agent cards */
-.cards, .history { margin: 0; padding: 0; list-style: none; }
-.agent-card { display: flex; gap: 12px; align-items: center; width: 100%; min-height: 72px; margin: 0 0 8px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: inherit; font-weight: 400; text-align: left; }
-.agent-card strong { display: block; font-weight: 500; font-size: 15px; }
-.agent-card .summary, .agent-card .budget { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-.agent-card .budget.attention { color: var(--warn); }
-.wallet { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); font-size: 12px; overflow-wrap: anywhere; }
+/* A Material 3 Expressive list: one group, with its outer corners very round and its inner corners nearly square. */
+.cards, .history { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.cards > li > .agent-card, .history > li { border-radius: var(--r-inner); }
+.cards > li:first-child > .agent-card, .history > li:first-child { border-top-left-radius: var(--r-outer); border-top-right-radius: var(--r-outer); }
+.cards > li:last-child > .agent-card, .history > li:last-child { border-bottom-left-radius: var(--r-outer); border-bottom-right-radius: var(--r-outer); }
+.cards > li.muted, .history > li.muted { padding: 16px 20px; background: var(--surface); }
+
+.agent-card { display: flex; gap: 14px; align-items: center; width: 100%; min-height: 84px; margin: 0; padding: 14px 18px 14px 14px; background: var(--surface); color: inherit; font-weight: 400; text-align: left; }
+.agent-card:active:not(:disabled) { transform: scale(0.985); background: var(--surface-press); border-radius: 18px; }
+@media (hover: hover) and (pointer: fine) { .agent-card:hover { background: var(--surface-press); } }
+.agent-card > .avatar { width: 52px; height: 52px; }
+.card-text { flex: 1; min-width: 0; }
+.card-text strong { display: block; font-weight: 500; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+.card-text .summary { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 2px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+.card-note { flex: none; max-width: 38%; font-size: 12px; line-height: 1.3; text-align: right; color: var(--muted); }
+.card-note.attention { color: var(--warn); }
+
+/* A budget: the number leads, and the unit sits quietly under it. */
+.budget-figure { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
+.amount { font-size: 24px; line-height: 1.1; font-weight: 500; letter-spacing: -0.02em; color: var(--text); }
+.unit { margin-top: 2px; font-size: 11px; line-height: 1.2; color: var(--muted); white-space: nowrap; }
+
+/* One agent */
+#agent-view .identity { gap: 16px; margin: 4px 0 16px; }
+#agent-view .identity .avatar.large { width: 76px; height: 76px; }
+#agent-name { font-size: 28px; line-height: 1.15; letter-spacing: -0.015em; }
+.wallet { margin: 0 0 3px; padding: 18px 20px; border-radius: var(--r-outer) var(--r-outer) var(--r-inner) var(--r-inner); background: var(--surface); font-size: 12px; overflow-wrap: anywhere; }
+.wallet .budget-figure { align-items: flex-start; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.wallet .amount { font-size: 40px; letter-spacing: -0.03em; }
+.wallet .unit { margin: 0; font-size: 13px; }
+.wallet-note { font-size: 14px; }
+.wallet-line { margin-top: 8px; color: var(--muted); }
 .wallet a { color: var(--primary); }
 .wallet .address { font-family: ui-monospace, monospace; }
-.wallet.attention { border-color: var(--warn); }
-.wallet button { margin-top: 8px; min-height: 36px; }
-.history li { padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
-.history .status { font-weight: 500; }
+.wallet.attention { box-shadow: inset 0 0 0 1px var(--warn); }
+.wallet button { margin-top: 12px; min-height: 44px; }
+#prompt-form { padding: 6px 20px 20px; border-radius: var(--r-inner) var(--r-inner) var(--r-outer) var(--r-outer); background: var(--surface); }
+#prompt-form textarea, #prompt-form input[type="number"] { background: var(--bg); }
+#prompt-form .muted { margin-bottom: 4px; }
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.actions button { margin: 0; min-height: 56px; }
+.actions #run { flex: 1.2; font-size: 16px; }
+.actions #edit-agent { flex: 1; }
+
+/* History */
+.history > li { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; padding: 14px 18px; background: var(--surface); font-size: 12.5px; overflow-wrap: anywhere; }
+.history-text { flex: 1; min-width: 0; }
+.history-prompt { font-size: 14px; line-height: 1.3; }
+.history-meta { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.35; }
+.history-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.history-side .amount { font-size: 20px; }
+.history .status { font-size: 12px; font-weight: 500; white-space: nowrap; }
 .history .good { color: var(--ok); }
 .history .warn { color: var(--warn); }
 .history .bad { color: var(--danger); }
-.history a { color: var(--primary); }
+
+/* The main action on the agents screen: short, tall and centered, rather than a wide bar. */
+#new-agent { display: flex; gap: 10px; align-items: center; justify-content: center; width: auto; min-width: 176px; min-height: 64px; margin: 20px auto 8px; padding: 0 30px; border-radius: 26px; background: var(--tonal); color: var(--on-tonal); font-size: 16px; }
+#new-agent:active:not(:disabled) { border-radius: 20px; }
+.plus { position: relative; display: block; width: 18px; height: 18px; }
+.plus::before, .plus::after { content: ""; position: absolute; left: 8px; top: 1px; width: 2px; height: 16px; border-radius: 1px; background: currentColor; }
+.plus::after { transform: rotate(90deg); }
 
 /* A run */
-#outcome { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-weight: 500; overflow-wrap: anywhere; }
+.run-state { display: flex; gap: 8px; align-items: center; min-height: 20px; margin: 4px 0 4px; color: var(--muted); font-size: 12px; }
+.spinner { flex: none; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--primary); border-radius: 50%; animation: spin 700ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#outcome { margin-top: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-weight: 500; overflow-wrap: anywhere; transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out), border-color 150ms ease, color 150ms ease; }
+@starting-style { #outcome { opacity: 0; transform: translateY(-4px); } }
 #outcome.good { border-color: var(--ok); color: var(--ok); }
 #outcome.bad { border-color: var(--danger); color: var(--danger); }
 #outcome.warn { border-color: var(--warn); color: var(--warn); }
 #shot { display: block; width: 100%; margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; }
 #log { margin: 12px 0 0; padding: 0; list-style: none; }
-#log li { display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; }
+#log li { display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; overflow-wrap: anywhere; transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out); }
+@starting-style { #log li { opacity: 0; transform: translateY(-4px); } }
 #log li > div { min-width: 0; }
 #log .stage { font-weight: 500; }
 #log .model { color: var(--muted); }
+/* The agent's choices and results are what a person reads. Page reads are bookkeeping, so they stay on one quiet line. */
+#log li[data-stage="observe"], #log li[data-stage="act"], #log li[data-stage="preflight"] { color: var(--muted); }
+#log li[data-stage="observe"] > div { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#log li[data-stage="observe"] .avatar, #log li[data-stage="act"] .avatar { opacity: 0.5; }
+#log li[data-stage="result"], #log li[data-stage="need_help"] { font-weight: 500; }
+
+/* Reduced motion means gentler, not nothing: fades stay, because they still explain what changed. */
+@media (prefers-reduced-motion: reduce) {
+  button:active:not(:disabled), .agent-card:active:not(:disabled), .avatar-choice:active:not(:disabled), .swatch:active:not(:disabled) { transform: none; }
+  .cluster .avatar { transition: opacity 120ms ease; transition-delay: 0ms !important; }
+  @starting-style { .cluster .avatar { transform: none; } }
+  section, #outcome, #log li { transition: opacity 120ms ease; }
+  @starting-style { section, #outcome, #log li { transform: none; } }
+  .spinner { animation-duration: 1400ms; }
+}

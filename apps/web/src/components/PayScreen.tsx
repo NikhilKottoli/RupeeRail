@@ -2,10 +2,7 @@ import ImageOutlined from "@mui/icons-material/ImageOutlined";
 import QrCodeScanner from "@mui/icons-material/QrCodeScanner";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
-import Divider from "@mui/material/Divider";
 import InputAdornment from "@mui/material/InputAdornment";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
@@ -21,8 +18,10 @@ import { decodeImageFile } from "../lib/qrImage";
 import { paiseToRupeesString, parseUpiQr, QrError, rupeesToPaise, type ParsedQr } from "../lib/upi";
 import { ensureChain, signTypedData, splitSignature, walletErrorMessage, type Eip1193Provider } from "../lib/wallet";
 import { shouldOfferSwap } from "../lib/swap";
+import { ActionRow, GroupedBlock, GroupedDetail, GroupedList, heroAction } from "./Grouped";
 import PaymentStatus from "./PaymentStatus";
 import ScanDialog from "./ScanDialog";
+import ScanIllustration from "./ScanIllustration";
 import SwapCard, { SwapSuccess } from "./SwapCard";
 
 interface Props {
@@ -31,16 +30,11 @@ interface Props {
   address: string;
 }
 
-type Stage = "scan" | "details" | "review" | "status";
+// Side by side when both fit, and a stack on the narrowest phones.
+const scanAction = { ...heroAction, flex: "1 1 170px", px: "20px" };
 
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <Stack direction="row" sx={{ justifyContent: "space-between", gap: 2 }}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant="body2" sx={{ textAlign: "right", overflowWrap: "anywhere" }}>{value}</Typography>
-    </Stack>
-  );
-}
+type Stage = "scan" | "details" | "review" | "status";
+const STAGE_ORDER: Stage[] = ["scan", "details", "review", "status"];
 
 export default function PayScreen({ config, provider, address }: Props) {
   const chainKeys = Object.keys(config.chains);
@@ -60,6 +54,12 @@ export default function PayScreen({ config, provider, address }: Props) {
   const [swapBusy, setSwapBusy] = useState(false);
   const [swapResult, setSwapResult] = useState<SwapResult | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const previousStage = useRef(stage);
+  const direction = STAGE_ORDER.indexOf(stage) < STAGE_ORDER.indexOf(previousStage.current) ? "back" : "forward";
+  useEffect(() => {
+    previousStage.current = stage;
+  }, [stage]);
+  const stageProps = { className: "rr-stage", "data-direction": direction };
 
   const chain = config.chains[chainKey];
   const minPaise = Number(config.limits.minInrPaise);
@@ -195,9 +195,9 @@ export default function PayScreen({ config, provider, address }: Props) {
 
   if (stage === "status" && paymentId && quote) {
     return (
-      <Stack spacing={2}>
+      <Stack key="status" spacing={2} {...stageProps}>
         <PaymentStatus config={config} provider={provider} address={address} id={paymentId} viewToken={quote.viewToken} />
-        <Button variant="outlined" onClick={reset}>New payment</Button>
+        <Button variant="outlined" onClick={reset} sx={heroAction}>New payment</Button>
       </Stack>
     );
   }
@@ -207,26 +207,21 @@ export default function PayScreen({ config, provider, address }: Props) {
     const tooLow = account !== null && BigInt(account.balance) < BigInt(quote.intent.amount);
     const offerSwap = shouldOfferSwap(chain, tooLow);
     return (
-      <Stack spacing={2}>
-        <Typography variant="h5" component="h2">Review payment</Typography>
-        <Card>
-          <CardContent>
-            <Stack spacing={1.5}>
-              <div>
-                <Typography variant="h4" component="p">{formatInr(paise)}</Typography>
-                <Typography color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
-                  to {quote.payee.name ? `${quote.payee.name} · ` : ""}{quote.payee.upiId}
-                </Typography>
-              </div>
-              <Divider />
-              <Row label="You pay" value={`${quote.display.amount} ${quote.display.symbol}`} />
-              <Row label="Network" value={chain.name} />
-              <Row label="Rate" value={`₹${quote.display.rate} per ${quote.display.symbol}`} />
-              <Row label="Market rate" value={`₹${quote.display.marketRate}`} />
-              <Row label="Network fee" value={quote.display.networkFee} />
-            </Stack>
-          </CardContent>
-        </Card>
+      <Stack key="review" spacing={2} {...stageProps}>
+        <Typography variant="h4" component="h2">Review payment</Typography>
+        <GroupedList aria-label="Payment details">
+          <GroupedBlock>
+            <Typography variant="h3" component="p">{formatInr(paise)}</Typography>
+            <Typography color="text.secondary" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>
+              to {quote.payee.name ? `${quote.payee.name} · ` : ""}{quote.payee.upiId}
+            </Typography>
+          </GroupedBlock>
+          <GroupedDetail label="You pay" value={`${quote.display.amount} ${quote.display.symbol}`} />
+          <GroupedDetail label="Network" value={chain.name} />
+          <GroupedDetail label="Rate" value={`₹${quote.display.rate} per ${quote.display.symbol}`} />
+          <GroupedDetail label="Market rate" value={`₹${quote.display.marketRate}`} />
+          <GroupedDetail label="Network fee" value={quote.display.networkFee} />
+        </GroupedList>
         {tooLow && !offerSwap && (
           <Alert severity="warning">Your wallet doesn't have enough {quote.display.symbol} for this payment.</Alert>
         )}
@@ -249,14 +244,16 @@ export default function PayScreen({ config, provider, address }: Props) {
         {swapResult && <SwapSuccess result={swapResult} chain={chain} />}
         {errorAlert}
         {busyLine}
-        {expired ? (
-          <Button variant="contained" size="large" disabled={!!busy || swapBusy} onClick={getQuote}>Get a new rate</Button>
-        ) : (
-          <Button variant="contained" size="large" disabled={!!busy || swapBusy || tooLow} onClick={pay}>
-            Pay · rate held for {secondsLeft}s
-          </Button>
-        )}
-        <Button disabled={!!busy || swapBusy} onClick={() => { setError(null); setSwapResult(null); setStage("details"); }}>Back</Button>
+        <ActionRow>
+          {expired ? (
+            <Button variant="contained" size="large" disabled={!!busy || swapBusy} onClick={getQuote}>Get a new rate</Button>
+          ) : (
+            <Button variant="contained" size="large" disabled={!!busy || swapBusy || tooLow} onClick={pay}>
+              Pay · rate held for {secondsLeft}s
+            </Button>
+          )}
+          <Button variant="outlined" size="large" disabled={!!busy || swapBusy} onClick={() => { setError(null); setSwapResult(null); setStage("details"); }}>Back</Button>
+        </ActionRow>
       </Stack>
     );
   }
@@ -264,72 +261,95 @@ export default function PayScreen({ config, provider, address }: Props) {
   if (stage === "details" && qr) {
     const fixedAmount = qr.amountPaise !== null;
     return (
-      <Stack spacing={2.5}>
-        <div>
-          <Typography variant="body2" color="text.secondary">Paying</Typography>
-          <Typography variant="h5" component="h2" sx={{ overflowWrap: "anywhere" }}>{qr.name ?? qr.upiId}</Typography>
-          {qr.name && <Typography color="text.secondary" sx={{ overflowWrap: "anywhere" }}>{qr.upiId}</Typography>}
-        </div>
-        <TextField
-          label="Amount"
-          value={inr}
-          onChange={(e) => setInr(e.target.value)}
-          error={!!amountError}
-          helperText={amountError ?? (fixedAmount ? "Set by this QR code" : `Up to ${formatInr(maxPaise)}`)}
-          disabled={fixedAmount}
-          autoFocus={!fixedAmount}
-          slotProps={{
-            input: { startAdornment: <InputAdornment position="start">₹</InputAdornment> },
-            htmlInput: { inputMode: "decimal", autoComplete: "off" },
-          }}
-        />
-        <div>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }} id="pay-with">Pay with</Typography>
-          <ToggleButtonGroup
-            exclusive
-            fullWidth
-            color="primary"
-            value={chainKey}
-            aria-labelledby="pay-with"
-            onChange={(_, value) => value && setChainKey(value)}
-          >
-            {chainKeys.map((key) => (
-              <ToggleButton key={key} value={key} sx={{ textTransform: "none", minHeight: 48, borderRadius: 3 }}>
-                {config.chains[key].token.symbol} · {config.chains[key].name}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, minHeight: 20 }}>
-            {account ? `Balance: ${account.balanceFormatted} ${account.symbol}` : " "}
-          </Typography>
-        </div>
+      <Stack key="details" spacing={2.5} {...stageProps}>
+        <GroupedList>
+          <GroupedBlock>
+            <Typography variant="body2" color="text.secondary">Paying</Typography>
+            <Typography variant="h5" component="h2" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>{qr.name ?? qr.upiId}</Typography>
+            {qr.name && <Typography color="text.secondary" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>{qr.upiId}</Typography>}
+          </GroupedBlock>
+          <GroupedBlock>
+            <Stack spacing={2.5}>
+              <TextField
+                label="Amount"
+                value={inr}
+                onChange={(e) => setInr(e.target.value)}
+                error={!!amountError}
+                helperText={amountError ?? (fixedAmount ? "Set by this QR code" : `Up to ${formatInr(maxPaise)}`)}
+                disabled={fixedAmount}
+                autoFocus={!fixedAmount}
+                slotProps={{
+                  input: { startAdornment: <InputAdornment position="start">₹</InputAdornment> },
+                  htmlInput: { inputMode: "decimal", autoComplete: "off" },
+                }}
+              />
+              <div>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }} id="pay-with">Pay with</Typography>
+                <ToggleButtonGroup
+                  exclusive
+                  fullWidth
+                  color="primary"
+                  value={chainKey}
+                  aria-labelledby="pay-with"
+                  onChange={(_, value) => value && setChainKey(value)}
+                >
+                  {chainKeys.map((key) => (
+                    <ToggleButton key={key} value={key}>
+                      {config.chains[key].token.symbol} · {config.chains[key].name}
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, minHeight: 20 }}>
+                  {account ? `Balance: ${account.balanceFormatted} ${account.symbol}` : " "}
+                </Typography>
+              </div>
+            </Stack>
+          </GroupedBlock>
+        </GroupedList>
         {errorAlert}
         {busyLine}
-        <Button variant="contained" size="large" disabled={!!busy || paise === null || !!amountError} onClick={getQuote}>
-          Continue
-        </Button>
-        <Button disabled={!!busy} onClick={reset}>Cancel</Button>
+        <ActionRow>
+          <Button variant="contained" size="large" disabled={!!busy || paise === null || !!amountError} onClick={getQuote}>
+            Continue
+          </Button>
+          <Button variant="outlined" size="large" disabled={!!busy} onClick={reset}>Cancel</Button>
+        </ActionRow>
       </Stack>
     );
   }
 
   return (
-    <Stack spacing={2.5} sx={{ pt: 2 }}>
-      <Stack spacing={1}>
+    <Stack key="scan" spacing={2.5} sx={{ pt: 1 }} {...stageProps}>
+      <ScanIllustration />
+      <Stack spacing={1} sx={{ textAlign: "center" }}>
         <Typography variant="h4" component="h2">Scan to pay</Typography>
         <Typography color="text.secondary">Pay any UPI QR from your stablecoin balance.</Typography>
       </Stack>
       {errorAlert}
       {busyLine}
-      <Button variant="contained" size="large" startIcon={<QrCodeScanner />} onClick={() => { setError(null); setScanning(true); }}>
-        Scan QR code
-      </Button>
-      <Button variant="outlined" size="large" startIcon={<ImageOutlined />} onClick={() => fileInput.current?.click()}>
-        Upload a photo
-      </Button>
+      <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: "wrap", justifyContent: "center", alignSelf: "center", width: "100%", maxWidth: 440 }}>
+        <Button
+          variant="contained"
+          size="large"
+          startIcon={<QrCodeScanner />}
+          onClick={() => { setError(null); setScanning(true); }}
+          sx={scanAction}
+        >
+          Scan QR code
+        </Button>
+        <Button
+          variant="outlined"
+          size="large"
+          startIcon={<ImageOutlined />}
+          onClick={() => fileInput.current?.click()}
+          sx={scanAction}
+        >
+          Upload a photo
+        </Button>
+      </Stack>
       <input ref={fileInput} type="file" accept="image/*" hidden onChange={onFile} aria-label="QR code image" />
       {showPaste ? (
-        <Stack spacing={1.5}>
+        <Stack spacing={1.5} sx={{ alignSelf: "center", width: "100%", maxWidth: 440 }}>
           <TextField
             label="UPI link"
             placeholder="upi://pay?pa=…"
@@ -341,7 +361,7 @@ export default function PayScreen({ config, provider, address }: Props) {
           <Button variant="outlined" disabled={!pasted.trim()} onClick={() => acceptQr(pasted)}>Continue</Button>
         </Stack>
       ) : (
-        <Button onClick={() => setShowPaste(true)}>Enter a UPI link</Button>
+        <Button onClick={() => setShowPaste(true)} sx={{ alignSelf: "center" }}>Enter a UPI link</Button>
       )}
       <ScanDialog open={scanning} onClose={() => setScanning(false)} onResult={acceptQr} />
     </Stack>

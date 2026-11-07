@@ -34,7 +34,7 @@ All integers in bodies are decimal strings. Errors are `{"error": "<CODE>", "mes
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | `ok`, `chains`, `paymaster`, `settler`, `quoteSigner`, `fx` (+ `diagnostics`) |
-| GET | `/config` | per chain: chainId, name, rpc, explorer, vault, token, `vaultDomain`, `permitDomain`, `types`; `paymaster` |
+| GET | `/config` | per chain: chainId, name, rpc, explorer, vault, token, `vaultDomain`, `permitDomain`, `types`; `paymaster`; `onramp: {rail, testMode}`, which decides whether the web app offers Buy |
 | GET | `/account/{chain}/{address}` | token balance, permit nonce, vault allowance (helper) |
 | POST | `/quote` | `{chain, user, inr, qrText}` -> `{id, intent, quoteSig, payee, display, signing:{permit, intent}, viewToken}` |
 | POST | `/offramp` | `{chain, intent, userSig, permit:{deadline,v,r,s}}` -> `{id, txHash, explorer, paidBy, status:"SUBMITTED"}` |

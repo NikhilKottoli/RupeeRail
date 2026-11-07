@@ -156,7 +156,7 @@ describe("Swap EURC to USDC on the review screen", () => {
     const dialog = await screen.findByRole("dialog", { name: "Confirm the swap" });
     // Shortfall 1.5 USDC, target 1.595, rate 1.08 at the stop limit: sell 1.476852 EURC, get at least 1.595 USDC.
     expect(dialog).toHaveTextContent("Swap 1.476852 EURC → at least 1.595 USDC");
-    expect(dialog).toHaveTextContent("Network fee: 0.002 USDC");
+    expect(dialog).toHaveTextContent(/Network fee\s*0\.002 USDC/);
     expect(dialog).toHaveTextContent("Rates come from Circle. You pay the network fee for this step.");
     // Estimates only so far: no swap without the user's click.
     expect(kit.swap).not.toHaveBeenCalled();

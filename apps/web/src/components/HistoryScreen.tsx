@@ -2,24 +2,21 @@ import ArrowBack from "@mui/icons-material/ArrowBack";
 import Refresh from "@mui/icons-material/Refresh";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
-import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
-import List from "@mui/material/List";
-import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
 import Stack from "@mui/material/Stack";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type AppConfig, type OfframpView } from "../lib/api";
 import { describeStatus, formatDateTime, formatInr, type Tone } from "../lib/format";
 import { localPayments } from "../lib/localPayments";
 import type { Eip1193Provider } from "../lib/wallet";
+import { GroupedButton, GroupedList, RowAmount } from "./Grouped";
 import PaymentStatus from "./PaymentStatus";
 
 const CHIP_COLOR: Record<Tone, "default" | "primary" | "success" | "warning" | "error"> = {
@@ -61,7 +58,7 @@ export default function HistoryScreen({ config, provider, address }: Props) {
   return (
     <Stack spacing={2}>
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
-        <Typography variant="h5" component="h2">History</Typography>
+        <Typography variant="h4" component="h2">History</Typography>
         <IconButton onClick={() => void load()} disabled={loading} aria-label="Refresh history"><Refresh /></IconButton>
       </Stack>
       {error && (
@@ -74,33 +71,26 @@ export default function HistoryScreen({ config, provider, address }: Props) {
         <Typography color="text.secondary" sx={{ py: 6, textAlign: "center" }}>Your payments will show up here.</Typography>
       )}
       {!!items?.length && (
-        <Card>
-          <List disablePadding>
-            {items.map((item, index) => {
-              const saved = local[item.id.toLowerCase()];
-              const status = describeStatus(item);
-              return (
-                <Fragment key={item.id}>
-                  {index > 0 && <Divider component="li" />}
-                  <li>
-                    <ListItemButton onClick={() => setSelected(item.id)} sx={{ py: 1.5, gap: 1 }}>
-                      <ListItemText
-                        primary={saved?.name ?? saved?.upiId ?? "UPI payment"}
-                        secondary={saved ? formatDateTime(Math.floor(saved.createdAt / 1000)) : config.chains[item.chain]?.name}
-                        slotProps={{ primary: { noWrap: true } }}
-                        sx={{ minWidth: 0 }}
-                      />
-                      <Stack spacing={0.5} sx={{ alignItems: "flex-end", flexShrink: 0 }}>
-                        <Typography>{formatInr(item.inrPaise)}</Typography>
-                        <Chip size="small" label={status.title} color={CHIP_COLOR[status.tone]} variant="outlined" />
-                      </Stack>
-                    </ListItemButton>
-                  </li>
-                </Fragment>
-              );
-            })}
-          </List>
-        </Card>
+        <GroupedList aria-label="Payments">
+          {items.map((item) => {
+            const saved = local[item.id.toLowerCase()];
+            const status = describeStatus(item);
+            return (
+              <GroupedButton key={item.id} onClick={() => setSelected(item.id)}>
+                <ListItemText
+                  primary={saved?.name ?? saved?.upiId ?? "UPI payment"}
+                  secondary={saved ? formatDateTime(Math.floor(saved.createdAt / 1000)) : config.chains[item.chain]?.name}
+                  slotProps={{ primary: { noWrap: true } }}
+                  sx={{ minWidth: 0 }}
+                />
+                <Stack spacing={0.75} sx={{ alignItems: "flex-end", flexShrink: 0 }}>
+                  <RowAmount>{formatInr(item.inrPaise)}</RowAmount>
+                  <Chip size="small" label={status.title} color={CHIP_COLOR[status.tone]} variant="outlined" />
+                </Stack>
+              </GroupedButton>
+            );
+          })}
+        </GroupedList>
       )}
 
       <Dialog open={!!selected} onClose={() => setSelected(null)} fullScreen={fullScreen} fullWidth maxWidth="sm">

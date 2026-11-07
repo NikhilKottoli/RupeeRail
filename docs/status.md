@@ -46,9 +46,19 @@ Plan: `README-agents.md`. Prize targets: Arc (Advanced Stablecoin Logic) and Ark
 - **Reporting payout results to the backend.** Until then, `COMPLETED` can appear when nobody was paid. The agent avoids this by reading the payer's result directly, but the backend and PWA don't yet.
 - **The rest of the Arkiv board**, until the agent works.
 
+## Razorpay and swap readiness (checked 2026-11-07)
+
+- **`APP_ENV=prod` can't start yet, on purpose.** `razorpayx` isn't implemented, and `phone` and `stub` are dev rails. The workable setup is `APP_ENV=dev` with `COLLECT_RAIL=razorpay`.
+- **Live Razorpay keys would charge real rupees for testnet tokens.** Nothing in the code prevents this, so keep `rzp_test_` keys until the vaults are on mainnet.
+- **Tested against Razorpay's test API:** creating, fetching and cancelling a link, and the real webhook secret. Paying on the hosted page and real webhook delivery still need a person, because the page asks for a mobile number and has an hCaptcha.
+- **Vault pools are nearly empty:** about 0.80 USDC on Arc and 0 USDT on Whitechain, so most purchases are refused until they're topped up.
+- **Deployed 2026-11-07 with `APP_ENV=dev`, `COLLECT_RAIL=razorpay` and `rzp_test_` keys,** as a decision for the hackathon. Razorpay disables a webhook that keeps failing for 24 hours.
+- **The swap needs the updated Caddyfile.** Under the old CSP the browser can't reach the Arc RPC or Circle.
+
 ## Needed from people
 
 - [ ] Enough UPI Lite balance on the phone before any real order. The agent can't see that balance before it locks funds.
+- [ ] One ₹1 test purchase on the live site, then top up the vault pools.
 - [ ] Your own details in Chef's profile. It currently holds a test diet.
 - [ ] A new model API key after the event. The current one has been exposed in a chat.
 - [ ] The backend's "section 5" rules, probably in `HANDOFF-payment-cycle-api-metamask.md`, which isn't in the repo.

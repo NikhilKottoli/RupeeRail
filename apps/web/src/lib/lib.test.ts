@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api, type ChainInfo } from "./api";
 import { describeStatus, formatInr, formatUnits } from "./format";
 import { localPayments, rememberPayment } from "./localPayments";
-import { describeOnramp, parseOnrampReturn, recentOnramps, rememberOnramp, stripOnrampReturn } from "./onramp";
+import { describeOnramp, isUnverifiedReturn, parseOnrampReturn, recentOnramps, rememberOnramp, stripOnrampReturn } from "./onramp";
 import { paiseToRupeesString, parseUpiQr, QrError, rupeesToPaise } from "./upi";
 import {
   connectWallet, discoverWallets, ensureChain, isUserRejection, metaMaskDeepLink, signTypedData, splitSignature,
@@ -246,6 +246,9 @@ describe("onramp", () => {
     expect(parseOnrampReturn(`?onramp=${ID}&payment=unverified`)?.payment).toBe("unverified");
     expect(parseOnrampReturn(`?onramp=${ID}&payment=anything`)?.payment).toBeNull();
     expect(parseOnrampReturn("?onramp=0x1234")).toBeNull();
+    expect(isUnverifiedReturn("?onramp=&payment=unverified")).toBe(true);
+    expect(isUnverifiedReturn(`?onramp=${ID}&payment=unverified`)).toBe(false); // it names an order, so that view explains it
+    expect(isUnverifiedReturn("?payment=received")).toBe(false);
     expect(parseOnrampReturn("?onramp=")).toBeNull();
     expect(parseOnrampReturn("")).toBeNull();
   });

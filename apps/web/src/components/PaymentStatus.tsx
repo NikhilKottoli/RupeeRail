@@ -4,15 +4,12 @@ import InfoOutlined from "@mui/icons-material/InfoOutlined";
 import OpenInNew from "@mui/icons-material/OpenInNew";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogTitle from "@mui/material/DialogTitle";
-import Divider from "@mui/material/Divider";
 import Link from "@mui/material/Link";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
@@ -20,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type AppConfig, type OfframpView } from "../lib/api";
 import { describeStatus, formatDateTime, formatInr, formatUnits, type Tone } from "../lib/format";
 import { ensureChain, signTypedData, walletErrorMessage, type Eip1193Provider } from "../lib/wallet";
+import { GroupedBlock, GroupedList } from "./Grouped";
 
 const POLL_MS = 3000;
 const DISPUTE_SIGNATURE_TTL_SEC = 600;
@@ -120,20 +118,21 @@ export default function PaymentStatus({ config, provider, address, id, viewToken
 
   return (
     <Stack spacing={2}>
-      <Card>
-        <CardContent>
-          <Stack spacing={2}>
-            <Stack direction="row" spacing={2} aria-live="polite" sx={{ alignItems: "flex-start" }}>
-              <ToneIcon tone={status.tone} />
-              <div>
-                <Typography variant="h6" component="h2">{status.title}</Typography>
-                <Typography variant="body2" color="text.secondary">{status.detail}</Typography>
-              </div>
-            </Stack>
-            <Divider />
+      <GroupedList>
+        <GroupedBlock>
+          <Stack direction="row" spacing={2} aria-live="polite" sx={{ alignItems: "flex-start" }}>
+            <span key={status.tone} className="rr-status-change"><ToneIcon tone={status.tone} /></span>
+            <div key={status.title} className="rr-status-text">
+              <Typography variant="h6" component="h2">{status.title}</Typography>
+              <Typography variant="body2" color="text.secondary">{status.detail}</Typography>
+            </div>
+          </Stack>
+        </GroupedBlock>
+        <GroupedBlock>
+          <Stack spacing={1}>
             <div>
-              <Typography variant="h4" component="p">{formatInr(view.inrPaise)}</Typography>
-              <Typography color="text.secondary" sx={{ overflowWrap: "anywhere" }}>
+              <Typography variant="h3" component="p">{formatInr(view.inrPaise)}</Typography>
+              <Typography color="text.secondary" sx={{ mt: 0.5, overflowWrap: "anywhere" }}>
                 {payee ? `to ${payee.name ? `${payee.name} · ` : ""}${payee.upiId}` : "UPI payment"}
               </Typography>
             </div>
@@ -147,18 +146,20 @@ export default function PaymentStatus({ config, provider, address, id, viewToken
                 Refunded automatically after {formatDateTime(view.timers.disputeDeadline)} if not resolved.
               </Typography>
             )}
-            {chain && txs.length > 0 && (
-              <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap" }}>
-                {txs.map(([label, hash]) => (
-                  <Link key={label} href={`${chain.explorer}/tx/${hash}`} target="_blank" rel="noopener noreferrer" variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, py: 1 }}>
-                    {label} <OpenInNew sx={{ fontSize: 14 }} />
-                  </Link>
-                ))}
-              </Stack>
-            )}
           </Stack>
-        </CardContent>
-      </Card>
+        </GroupedBlock>
+        {chain && txs.length > 0 && (
+          <GroupedBlock>
+            <Stack direction="row" spacing={2} useFlexGap sx={{ flexWrap: "wrap", my: -1 }}>
+              {txs.map(([label, hash]) => (
+                <Link key={label} href={`${chain.explorer}/tx/${hash}`} target="_blank" rel="noopener noreferrer" variant="body2" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, py: 1 }}>
+                  {label} <OpenInNew sx={{ fontSize: 14 }} />
+                </Link>
+              ))}
+            </Stack>
+          </GroupedBlock>
+        )}
+      </GroupedList>
 
       {view.canDispute && ownPayment && (
         <Stack spacing={0.5}>

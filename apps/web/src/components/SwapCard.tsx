@@ -1,8 +1,7 @@
 import SwapHoriz from "@mui/icons-material/SwapHoriz";
 import Alert from "@mui/material/Alert";
+import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -19,6 +18,7 @@ import {
   swapErrorMessage, unitsToDecimal, type ArcSwapper,
 } from "../lib/swap";
 import { ensureChain, type Eip1193Provider } from "../lib/wallet";
+import { GroupedBlock, GroupedDetail, GroupedList, heroAction } from "./Grouped";
 
 interface Plan {
   amountIn: bigint;
@@ -141,44 +141,58 @@ export default function SwapCard({
   const fee = plan ? gasFeeText(plan.estimate) : null;
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Stack spacing={1.5}>
-          <Typography>
-            You have <strong>{balanceText} {symbol}</strong>. This payment needs <strong>{requiredText} {symbol}</strong>.
-          </Typography>
-          <Typography variant="body2" color="text.secondary">{eurcText}</Typography>
-          {error && <Alert severity="error" role="alert">{error}</Alert>}
-          {working && !plan && (
-            <Stack direction="row" spacing={1.5} role="status" sx={{ alignItems: "center" }}>
-              <CircularProgress size={20} />
-              <Typography variant="body2">{busy}</Typography>
-            </Stack>
-          )}
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<SwapHoriz />}
-            disabled={disabled || working || noEurc}
-            onClick={prepare}
-          >
-            Swap EURC → USDC
-          </Button>
-          {noEurc && <Typography variant="caption" color="text.secondary">You don't have any EURC to swap.</Typography>}
-        </Stack>
-      </CardContent>
+    <>
+      <GroupedList aria-label="Swap EURC to USDC">
+        <GroupedBlock>
+          <Stack direction="row" spacing={2} sx={{ alignItems: "center" }}>
+            <Box sx={{ display: "grid", placeItems: "center", flexShrink: 0, width: 48, height: 48, borderRadius: "16px", bgcolor: "secondary.main", color: "secondary.contrastText" }}>
+              <SwapHoriz />
+            </Box>
+            <div>
+              <Typography sx={{ overflowWrap: "anywhere" }}>
+                You have <strong>{balanceText} {symbol}</strong>. This payment needs <strong>{requiredText} {symbol}</strong>.
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{eurcText}</Typography>
+            </div>
+          </Stack>
+        </GroupedBlock>
+        <GroupedBlock>
+          <Stack spacing={1.5}>
+            {error && <Alert severity="error" role="alert">{error}</Alert>}
+            {working && !plan && (
+              <Stack direction="row" spacing={1.5} role="status" sx={{ alignItems: "center" }}>
+                <CircularProgress size={20} />
+                <Typography variant="body2">{busy}</Typography>
+              </Stack>
+            )}
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<SwapHoriz />}
+              disabled={disabled || working || noEurc}
+              onClick={prepare}
+              sx={heroAction}
+            >
+              Swap EURC → USDC
+            </Button>
+            {noEurc && <Typography variant="caption" color="text.secondary" sx={{ textAlign: "center" }}>You don't have any EURC to swap.</Typography>}
+          </Stack>
+        </GroupedBlock>
+      </GroupedList>
 
       <Dialog open={plan !== null} onClose={() => !working && setPlan(null)} aria-labelledby="swap-title" fullWidth maxWidth="xs">
         <DialogTitle id="swap-title">Confirm the swap</DialogTitle>
         <DialogContent>
           {plan && (
-            <Stack spacing={1.5}>
-              <Typography>
-                Swap <strong>{unitsToDecimal(plan.amountIn)} EURC</strong> → at least <strong>{unitsToDecimal(plan.minOut)} USDC</strong>
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Network fee: {fee ?? "shown by your wallet"}
-              </Typography>
+            <Stack spacing={2}>
+              <GroupedList>
+                <GroupedBlock>
+                  <Typography sx={{ overflowWrap: "anywhere" }}>
+                    Swap <strong>{unitsToDecimal(plan.amountIn)} EURC</strong> → at least <strong>{unitsToDecimal(plan.minOut)} USDC</strong>
+                  </Typography>
+                </GroupedBlock>
+                <GroupedDetail label="Network fee" value={fee ?? "shown by your wallet"} />
+              </GroupedList>
               <Typography variant="body2" color="text.secondary">
                 Rates come from Circle. You pay the network fee for this step. The swap is routed through a swap
                 provider and is subject to its terms.
@@ -197,6 +211,6 @@ export default function SwapCard({
           <Button variant="contained" disabled={working} onClick={confirm}>Swap</Button>
         </DialogActions>
       </Dialog>
-    </Card>
+    </>
   );
 }

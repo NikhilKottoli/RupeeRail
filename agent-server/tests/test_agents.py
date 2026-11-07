@@ -505,7 +505,7 @@ class ChainAdmin(FakeAdmin):
         self.backend.account("arc", address)["allowance"] = str(amount)
 
 
-def wallet_server(admin_class=ChainAdmin, wallets=(), **settings_over):
+def wallet_server(admin_class=ChainAdmin, wallets=(), store=None, **settings_over):
     backend = PerWallet()
     admin = admin_class(backend, wallets)
     signers = {}
@@ -515,7 +515,7 @@ def wallet_server(admin_class=ChainAdmin, wallets=(), **settings_over):
         return signers[wallet]
     settings = Settings(**{"global_max_inr": 30, **settings_over})
     app = create_app(settings, client=backend, signer_for=signer_for, results=Results(), decider_factory=lambda agent, prompt: RuleDecider(prompt),
-                     store=AgentStore(":memory:"), admin=admin, background=lambda work: work(),
+                     store=store or AgentStore(":memory:"), admin=admin, background=lambda work: work(),
                      wallet_options={"poll_sec": 0, "wait_sec": 0, "sleep": lambda _: None},
                      machine_options={"poll_sec": 0, "wait_sec": 0, "result_wait_sec": 0.2})
     return TestClient(app), backend, admin, signers
@@ -635,6 +635,19 @@ def test_archiving_revokes_the_budget_first():
     assert start_run(client, agent).status_code == 409
     assert client.patch(f"/agents/{agent['id']}", json={"name": "x"}, headers=EXT).status_code == 409
     assert client.post(f"/agents/{agent['id']}/budget", json={"usdc": "1"}, headers=EXT).status_code == 409
+
+
+def test_an_agent_cant_be_archived_while_its_wallet_is_being_set_up():
+    """Setup would finish afterwards and put the budget back on an archived agent."""
+    store = AgentStore(":memory:")
+    client, backend, _, _ = wallet_server(wallets=(WALLET,), store=store)
+    agent = new_agent(client)
+    budget = backend.account("arc", WALLET)["allowance"]
+    store.set_wallet_state(agent["id"], "approving", "setting the on-chain budget")
+    assert client.delete(f"/agents/{agent['id']}", headers=EXT).status_code == 409
+    assert backend.account("arc", WALLET)["allowance"] == budget
+    store.set_wallet_state(agent["id"], "ready")
+    assert client.delete(f"/agents/{agent['id']}", headers=EXT).json() == {"archived": True}
 
 
 def test_an_agent_isnt_archived_if_revoking_fails():
