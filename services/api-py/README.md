@@ -3,8 +3,7 @@
 FastAPI + uvicorn backend for `ScanPayVault` (`contracts/src/ScanPayVault.sol`) on Arc testnet (USDC) and
 Whitechain Sepolia (USDT). It quotes UPI payments, co-signs them as the quote signer, relays them gaslessly as the
 paymaster, watches the vault, pays the merchant in INR through a black-box payout command exactly once, and
-settles, refunds and releases onchain. The HTTP surface follows API contract v1
-(`HANDOFF-payment-cycle-api-metamask.md` sections 3.1-3.8). See `HANDOFF.md` for the architecture.
+settles, refunds and releases onchain. The HTTP surface is API contract v1, listed under Endpoints below.
 
 ## Run
 

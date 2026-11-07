@@ -1,0 +1,45 @@
+{
+  "chain": "arc-mainnet",
+  "chainId": 5042,
+  "rpc": "https://rpc.mainnet.arc.io",
+  "explorer": "https://explorer.arc.io",
+  "vault": "0xa140978374AAE1637b927C568E584e8fBB9a7cb0",
+  "token": {
+    "symbol": "USDC",
+    "address": "0x3600000000000000000000000000000000000000",
+    "decimals": 6,
+    "permitDomain": {
+      "name": "USDC",
+      "version": "2"
+    }
+  },
+  "roles": {
+    "owner": "0x478C091e77BB3C77871752E9B08DEA981EcEACc0",
+    "settler": "0x478C091e77BB3C77871752E9B08DEA981EcEACc0",
+    "quoteSigner": "0x478C091e77BB3C77871752E9B08DEA981EcEACc0",
+    "arbiter": "0x478C091e77BB3C77871752E9B08DEA981EcEACc0",
+    "guardian": "0x0000000000000000000000000000000000000000"
+  },
+  "config": {
+    "completeDelaySec": 15,
+    "disputeWindowSec": 86400,
+    "reclaimDelaySec": 86400,
+    "disputeTimeoutSec": 604800,
+    "maxOfframpAmount": "100000000",
+    "dailyEmitCap": "1000000000"
+  },
+  "contractCommit": "5355d67 (Arc Studio source, unchanged; matches .arc-studio/pull-manifest.json)",
+  "deployTx": "0xae833f0aa1b0a7f935bfd80a692f7cb90f7684d2c4e94b6e38661509c71c9fac",
+  "deployBlock": 29929084,
+  "deployedBy": "0x478C091e77BB3C77871752E9B08DEA981EcEACc0 (self-deployed; Arc Studio deploys to testnets only)",
+  "bytecodeCheck": "deploy input == Foundry build of the Arc Studio source (incl. metadata) + constructor args (USDC, 0x478C x4)",
+  "verified": false,
+  "verifiedNote": "explorer.arc.io's API sits behind a Cloudflare browser check, so forge verify-contract fails; verify via the explorer UI with the standard JSON input (solc 0.8.28, optimizer 200, evm paris)",
+  "funding": {
+    "route": "Base ETH -> USDC (Uniswap v3) -> CCTP v2 depositForBurnWithHook (domain 6 -> 26) with Circle Forwarding (mint submitted by Circle)",
+    "swapTx": "base:0x6f39630567bc4abf30c5702b6f5b328a1382f469479e95d77f13f94217ea7b72",
+    "burnTx": "base:0xa159c824825d3c58843aa889edaab73152c588e5ab923f7844970b0dec96f83e",
+    "mintTx": "arc:0x4125ece71e62a2ecce9b765f6c9d76f3c2e9ffcbbd390242ffb26623c8242018"
+  },
+  "status": "deployed, not yet wired to the backend, payer or web app (all still on testnets)"
+}

@@ -95,9 +95,9 @@ One Azure host serves the web app and the API through Caddy. It runs copies of t
 
 | File | Covers |
 |---|---|
-| `README-agents.md` | The long-lived agents plan |
-| `docs/backend-notes.md`, `docs/verify-log.md` | Backend findings and tested answers for the plan |
+| `docs/verify-log.md` | Tested answers to the agent plan's open questions |
 | `arkiv/` | Arkiv entities, queries and the prize write-ups |
-| `README-backend.md` | API, environment variables, backend internals. It cites handoff files that aren't in the repo |
+| `agent-server/README.md` | Hosting the agent server |
+| `services/api-py/README.md` | API, environment variables, backend internals |
 | `apps/web/README.md`, `apps/upi-payer/README.md` | Those apps' setup |
 | `contracts/README.md` | Contract tests and deployment |
